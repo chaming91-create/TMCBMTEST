@@ -1,0 +1,1 @@
+import { Database } from 'lucide-react';export default function EmptyState({text='표시할 데이터가 없습니다.'}:{text?:string}){return <div className="empty"><Database size={40}/><strong>{text}</strong><span>엑셀 업로드 화면에서 데이터를 등록하세요.</span></div>}
