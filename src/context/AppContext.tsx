@@ -48,9 +48,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
   const setHistoryImport = async (value: ReplacementHistory[], note = '교체현황 엑셀 업로드') => {
     await backupDatabase({ tms, history, risks, severities, settings });
-    const serials = new Set(tms.map(x => x.serialNo)), now = new Date().toISOString(), extra: TmMaster[] = [];
-    value.flatMap(x => [x.removedSerialNo, x.installedSerialNo]).filter(Boolean).forEach(serialNo => { if (!serials.has(serialNo)) { serials.add(serialNo); extra.push({ serialNo, manufacturer: '', manufactureYear: null, ageYear: 0, currentStatus: '이력만 존재', isSpare: false, currentTrain: '', currentCar: '', currentPosition: '', installDate: '', sourceType: 'history_only', createdAt: now, updatedAt: now }); } });
-    const nextTms = [...tms, ...extra], nextRisks = calculateAllRisks(nextTms, value, severities, settings);
+    const now = new Date().toISOString();
+    const bySerial = new Map(tms.map(tm => [tm.serialNo, { ...tm }]));
+    const ensureTm = (serialNo: string, manufacturer = '', manufactureYear: number | null = null) => {
+      const serial = serialNo.trim();
+      if (!serial || serial === '-') return null;
+      const found = bySerial.get(serial);
+      if (found) {
+        if (!found.manufacturer && manufacturer) found.manufacturer = manufacturer;
+        if (!found.manufactureYear && manufactureYear) {
+          found.manufactureYear = manufactureYear;
+          found.ageYear = Math.max(0, settings.referenceYear - manufactureYear);
+        }
+        found.updatedAt = now;
+        return found;
+      }
+      const tm: TmMaster = { serialNo: serial, manufacturer, manufactureYear, ageYear: manufactureYear ? Math.max(0, settings.referenceYear - manufactureYear) : 0, currentStatus: '이력만 존재', isSpare: false, currentTrain: '', currentCar: '', currentPosition: '', installDate: '', sourceType: 'history_only', createdAt: now, updatedAt: now };
+      bySerial.set(serial, tm);
+      return tm;
+    };
+    [...value].sort((a, b) => (a.replacementDate || '').localeCompare(b.replacementDate || '')).forEach(row => {
+      const removed = ensureTm(row.removedSerialNo, row.removedManufacturer || '', row.removedManufactureYear ?? null);
+      if (removed) {
+        removed.currentStatus = row.removedStatus || '취거';
+        removed.isSpare = false;
+        removed.currentTrain = '';
+        removed.currentCar = '';
+        removed.currentPosition = '';
+        removed.updatedAt = now;
+      }
+      const installed = ensureTm(row.installedSerialNo, row.installedManufacturer || '', row.installedManufactureYear ?? null);
+      if (installed) {
+        installed.currentStatus = row.installedStatus || '운행중';
+        installed.isSpare = false;
+        installed.currentTrain = row.trainNo;
+        installed.currentCar = row.carNo;
+        installed.currentPosition = row.position;
+        installed.installDate = row.replacementDate;
+        installed.updatedAt = now;
+      }
+    });
+    const nextTms = Array.from(bySerial.values()), nextRisks = calculateAllRisks(nextTms, value, severities, settings);
     setTms(nextTms); setHistory(value); await replaceTmData(nextTms, nextRisks); await replaceHistoryData(value, nextRisks); await log('EXCEL_IMPORT', 'replacement_history', '', history, value, note);
   };
   const addReplacement = async (value: ReplacementHistory) => {
