@@ -8,7 +8,7 @@ import { validateData } from '../lib/validators';
 import { addAudit, backupDatabase, replaceHistoryData, replaceTmData, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
 import { firebaseConfigured } from '../lib/firebase';
 
-interface State { tms: TmMaster[]; history: ReplacementHistory[]; risks: RiskScore[]; severities: SeverityMaster[]; settings: RiskSettings; issues: ValidationIssue[]; setTmImport: (v: TmMaster[], note?: string) => Promise<void>; setHistoryImport: (v: ReplacementHistory[], note?: string) => Promise<void>; addReplacement: (v: ReplacementHistory) => Promise<void>; updateSettings: (s: RiskSettings, sm: SeverityMaster[]) => Promise<void>; log: (eventType: string, targetTable: string, serialNo: string, beforeValue: unknown, afterValue: unknown, note: string) => Promise<void>; }
+interface State { tms: TmMaster[]; history: ReplacementHistory[]; risks: RiskScore[]; severities: SeverityMaster[]; settings: RiskSettings; issues: ValidationIssue[]; setTmImport: (v: TmMaster[], note?: string) => Promise<void>; setHistoryImport: (v: ReplacementHistory[], note?: string, severityOverride?: SeverityMaster[]) => Promise<void>; addReplacement: (v: ReplacementHistory) => Promise<void>; updateSettings: (s: RiskSettings, sm: SeverityMaster[]) => Promise<void>; log: (eventType: string, targetTable: string, serialNo: string, beforeValue: unknown, afterValue: unknown, note: string) => Promise<void>; }
 const C = createContext<State | null>(null);
 const load = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || '') as T; } catch { return fallback; } };
 
@@ -46,8 +46,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const nextRisks = calculateAllRisks(value, history, severities, settings);
     setTms(value); await replaceTmData(value, nextRisks); await log('EXCEL_IMPORT', 'tm_master', '', tms, value, note);
   };
-  const setHistoryImport = async (value: ReplacementHistory[], note = '교체현황 엑셀 업로드') => {
+  const setHistoryImport = async (value: ReplacementHistory[], note = '교체현황 엑셀 업로드', severityOverride?: SeverityMaster[]) => {
     await backupDatabase({ tms, history, risks, severities, settings });
+    const effectiveSeverities = severityOverride?.length ? severityOverride : severities;
+    if (severityOverride?.length) setSeverities(severityOverride);
     const now = new Date().toISOString();
     const bySerial = new Map(tms.map(tm => [tm.serialNo, { ...tm }]));
     const ensureTm = (serialNo: string, manufacturer = '', manufactureYear: number | null = null) => {
@@ -88,7 +90,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         installed.updatedAt = now;
       }
     });
-    const nextTms = Array.from(bySerial.values()), nextRisks = calculateAllRisks(nextTms, value, severities, settings);
+    const nextTms = Array.from(bySerial.values()), nextRisks = calculateAllRisks(nextTms, value, effectiveSeverities, settings);
     setTms(nextTms); setHistory(value); await replaceTmData(nextTms, nextRisks); await replaceHistoryData(value, nextRisks); await log('EXCEL_IMPORT', 'replacement_history', '', history, value, note);
   };
   const addReplacement = async (value: ReplacementHistory) => {

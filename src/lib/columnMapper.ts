@@ -25,10 +25,10 @@ const aliases:Record<string,string[]>={
   installedManufactureYear:['취부tm제작년도','취부tm제조년도','취부tm제작연도','부착tm제작년도','부착tm제조년도','installedmanufactureyear'],
   installedManufacturer:['취부tm제조사','취부tm제작사','부착tm제조사','부착tm제작사','installedmanufacturer'],
   installedStatus:['취부품상태','취부상태','부착상태','installedstatus'],
-  replacementReason:['교체사유','교환사유','교체원인','고장성교체여부','고장성교체여부자동','replacementreason'],
+  replacementReason:['교체사유','교환사유','교체원인','replacementreason'],
   failureType:['고장유형','고장유형선택','고장종류','불량유형','failuretype'],
-  severityClass:['고장심각도','심각도','심각도자동','severityclass'],
-  severityScore:['심각도점수','위험점수','위험점수자동','severityscore'],
+  severityClass:['고장심각도','심각도','severityclass'],
+  severityScore:['심각도점수','위험점수','severityscore'],
   detail:['세부고장내용','고장내용','상세내용','detail'],
   actionTaken:['조치내용','정비내용','처리내용','actiontaken']
 };
