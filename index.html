@@ -9,5 +9,15 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      setTimeout(function () {
+        if (window.__CBM_APP_STARTED__) return;
+        var style = document.createElement('link');
+        style.rel = 'stylesheet';
+        style.href = './assets/style.css';
+        document.head.appendChild(style);
+        Function("return import('./assets/app.js')")();
+      }, 700);
+    </script>
   </body>
 </html>
