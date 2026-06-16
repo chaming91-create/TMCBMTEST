@@ -30,6 +30,16 @@ npm run build
 npm run preview
 ```
 
+## Cloudflare Pages 배포
+
+Cloudflare Pages에서 GitHub 저장소를 연결한 뒤 빌드 설정을 다음처럼 지정합니다.
+
+- Build command: `npm run build`
+- Build output directory: `dist`
+- Root directory: 비워 둠
+
+Firebase 실사용 모드가 필요하면 Cloudflare Pages의 Settings > Environment variables에 `.env.example`의 `VITE_FIREBASE_*` 값을 추가한 뒤 다시 배포합니다. 값을 넣지 않으면 앱은 브라우저 `localStorage`를 쓰는 데모 모드로 실행됩니다.
+
 ## Firebase 설정
 
 1. Firebase Console에서 프로젝트를 생성합니다.
