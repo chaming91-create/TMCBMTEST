@@ -38,7 +38,7 @@ Cloudflare Pages에서 GitHub 저장소를 연결한 뒤 빌드 설정을 다음
 - Build output directory: `dist`
 - Root directory: 비워 둠
 
-저장소에는 `wrangler.toml`도 포함되어 있어 Cloudflare가 빌드 산출물 `dist`를 배포 대상으로 인식할 수 있습니다. 배포된 HTML에 `/src/main.tsx`가 보이면 루트 디렉터리를 잘못 배포한 것이므로 Pages 설정에서 Output directory를 `dist`로 다시 지정하고 재배포하세요.
+배포된 HTML에 `/src/main.tsx`가 보이면 루트 디렉터리를 잘못 배포한 것입니다. Pages 설정에서 Output directory를 `dist`로 다시 지정하고 재배포하세요. 저장소에는 루트 배포 fallback도 포함되어 있어 잘못된 루트 배포에서도 앱 파일을 불러오도록 보강되어 있습니다.
 
 Firebase 실사용 모드가 필요하면 Cloudflare Pages의 Settings > Environment variables에 `.env.example`의 `VITE_FIREBASE_*` 값을 추가한 뒤 다시 배포합니다. 값을 넣지 않으면 앱은 브라우저 `localStorage`를 쓰는 데모 모드로 실행됩니다.
 
