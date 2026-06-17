@@ -26,15 +26,26 @@ describe('excelParser workbook import', () => {
     expect(mapping.severityScore).toBe('');
   });
 
-  it('keeps replacement rows when installed position is missing', () => {
+  it('keeps replacement rows when installed position is missing and marks it unknown', () => {
     const rows = mapReplacementRows([
       { 교체일자: '2024-01-02', 편성: '111', 취거TM: 'OLD-1', 취부TM: 'NEW-1' },
       { 교체일자: '2024-01-03', 편성: '112', 취거TM: 'OLD-2', 취부TM: 'NEW-2', 위치: '' },
     ], { replacementDate: '교체일자', trainNo: '편성', removedSerialNo: '취거TM', installedSerialNo: '취부TM', position: '위치' });
 
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ replacementDate: '2024-01-02', trainNo: '111', position: '', installedSerialNo: 'NEW-1' });
-    expect(rows[1].position).toBe('');
+    expect(rows[0]).toMatchObject({ replacementDate: '2024-01-02', trainNo: '111', position: '모름', installedSerialNo: 'NEW-1' });
+    expect(rows[1].position).toBe('모름');
+  });
+
+  it('normalizes missing Excel info to 모름 and reports it as 안내', () => {
+    const rows = mapReplacementRows([
+      { 교체일자: '2024-01-02', 취거TM: 'OLD-1', 취부TM: 'NEW-1' },
+    ], { replacementDate: '교체일자', trainNo: '편성', removedSerialNo: '취거TM', installedSerialNo: '취부TM', position: '위치', failureType: '고장유형', removedStatus: '취거품상태' });
+    const issues = validateReplacementRows(rows, [], new Map());
+
+    expect(rows[0]).toMatchObject({ trainNo: '모름', position: '모름', failureType: '모름', removedStatus: '모름' });
+    expect(issues.some(issue => issue.category === '편성 불분명' && issue.level === '안내')).toBe(true);
+    expect(issues.some(issue => issue.category === '편성 누락' && issue.level === '오류')).toBe(false);
   });
 
   it('does not flag spare storage locations as position errors', () => {
@@ -60,14 +71,14 @@ describe('excelParser workbook import', () => {
     expect(rows.some(row => row.failureCode === '#NAME?' || row.severityClass === '#NAME?')).toBe(false);
   });
 
-  it('treats missing removed status as warning, not error', () => {
+  it('treats missing removed status as unclear info, not error', () => {
     const wb = XLSX.read(readFileSync(replacementFilePath), { type: 'buffer', cellDates: true });
     const masterRows = parseTMInstallationSheet(XLSX.read(readFileSync(tmFilePath), { type: 'buffer', cellDates: true }), 2026);
     const severities = parseSeverityClassificationSheet(wb);
     const rows = parseReplacementHistorySheet(wb, toSeverityMap(severities));
     const issues = validateReplacementRows(rows, masterRows, toSeverityMap(severities));
 
-    expect(issues.some(issue => issue.category === '취거품 상태 없음' && issue.level === '경고')).toBe(true);
-    expect(issues.some(issue => issue.category === '취거품 상태 없음' && issue.level === '오류')).toBe(false);
+    expect(issues.some(issue => issue.category === '취거품 상태 불분명' && issue.level === '안내')).toBe(true);
+    expect(issues.some(issue => issue.category === '취거품 상태 불분명' && issue.level === '오류')).toBe(false);
   });
 });
