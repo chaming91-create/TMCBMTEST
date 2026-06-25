@@ -26,6 +26,13 @@ describe('excelParser workbook import', () => {
     expect(mapping.severityScore).toBe('');
   });
 
+
+  it('maps TM installation 교환일자 as the current install date', () => {
+    const mapping = autoMapColumns(['시리얼번호', '교환일자', '편성', '위치'], 'tm');
+
+    expect(mapping.installDate).toBe('교환일자');
+  });
+
   it('keeps replacement rows when installed position is missing and marks it unknown', () => {
     const rows = mapReplacementRows([
       { 교체일자: '2024-01-02', 편성: '111', 취거TM: 'OLD-1', 취부TM: 'NEW-1' },

@@ -10,7 +10,7 @@ const aliases:Record<string,string[]>={
   currentTrain:['편성','편성번호','train','trainno'],
   currentCar:['호차','차량','차호','car','carno'],
   currentPosition:['위치','취부위치','장착위치','position'],
-  installDate:['취부일자','장착일자','설치일자','installdate'],
+  installDate:['교환일자','취부일자','장착일자','설치일자','installdate'],
   note:['비고','현황비고','note','remark','취거품상태조치비고'],
   replacementId:['교체id','교체아이디','replacementid','id'],
   replacementDate:['교체일자','교환일자','교체일','replacementdate'],

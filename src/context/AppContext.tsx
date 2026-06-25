@@ -4,6 +4,7 @@ import type { ReplacementHistory } from '../types/replacement';
 import type { RiskScore, RiskSettings, ValidationIssue, AuditLog } from '../types/risk';
 import { DEFAULT_SETTINGS, DEFAULT_SEVERITIES } from '../lib/defaults';
 import { calculateAllRisks } from '../lib/riskCalculator';
+import { applyHistoryImportToTmState, isReplacementNewerThanCurrent } from '../lib/tmState';
 import { validateData } from '../lib/validators';
 import { addAudit, backupDatabase, replaceHistoryData, replaceTmData, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
 import { firebaseConfigured } from '../lib/firebase';
@@ -51,52 +52,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const effectiveSeverities = severityOverride?.length ? severityOverride : severities;
     if (severityOverride?.length) setSeverities(severityOverride);
     const now = new Date().toISOString();
-    const bySerial = new Map(tms.map(tm => [tm.serialNo, { ...tm }]));
-    const ensureTm = (serialNo: string, manufacturer = '', manufactureYear: number | null = null) => {
-      const serial = serialNo.trim();
-      if (!serial || serial === '-') return null;
-      const found = bySerial.get(serial);
-      if (found) {
-        if (!found.manufacturer && manufacturer) found.manufacturer = manufacturer;
-        if (!found.manufactureYear && manufactureYear) {
-          found.manufactureYear = manufactureYear;
-          found.ageYear = Math.max(0, settings.referenceYear - manufactureYear);
-        }
-        found.updatedAt = now;
-        return found;
-      }
-      const tm: TmMaster = { serialNo: serial, manufacturer, manufactureYear, ageYear: manufactureYear ? Math.max(0, settings.referenceYear - manufactureYear) : 0, currentStatus: '이력만 존재', isSpare: false, currentTrain: '', currentCar: '', currentPosition: '', installDate: '', sourceType: 'history_only', createdAt: now, updatedAt: now };
-      bySerial.set(serial, tm);
-      return tm;
-    };
-    [...value].sort((a, b) => (a.replacementDate || '').localeCompare(b.replacementDate || '')).forEach(row => {
-      const removed = ensureTm(row.removedSerialNo, row.removedManufacturer || '', row.removedManufactureYear ?? null);
-      if (removed) {
-        removed.currentStatus = row.removedStatus || '취거';
-        removed.isSpare = false;
-        removed.currentTrain = '';
-        removed.currentCar = '';
-        removed.currentPosition = '';
-        removed.updatedAt = now;
-      }
-      const installed = ensureTm(row.installedSerialNo, row.installedManufacturer || '', row.installedManufactureYear ?? null);
-      if (installed) {
-        installed.currentStatus = row.installedStatus || '운행중';
-        installed.isSpare = false;
-        installed.currentTrain = row.trainNo;
-        installed.currentCar = row.carNo;
-        installed.currentPosition = row.position;
-        installed.installDate = row.replacementDate;
-        installed.updatedAt = now;
-      }
-    });
-    const nextTms = Array.from(bySerial.values()), nextRisks = calculateAllRisks(nextTms, value, effectiveSeverities, settings);
+    const nextTms = applyHistoryImportToTmState(tms, value, settings.referenceYear, now), nextRisks = calculateAllRisks(nextTms, value, effectiveSeverities, settings);
     setTms(nextTms); setHistory(value); await replaceTmData(nextTms, nextRisks); await replaceHistoryData(value, nextRisks); await log('EXCEL_IMPORT', 'replacement_history', '', history, value, note);
   };
   const addReplacement = async (value: ReplacementHistory) => {
     const now = new Date().toISOString();
     let foundInstalled = false;
-    const next = tms.map(tm => { if (tm.serialNo === value.removedSerialNo) return { ...tm, currentStatus: value.removedStatus || '취거', currentTrain: '', currentCar: '', currentPosition: '', updatedAt: now }; if (tm.serialNo === value.installedSerialNo) { foundInstalled = true; return { ...tm, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, updatedAt: now }; } return tm; });
+    const next = tms.map(tm => {
+      if (tm.serialNo === value.removedSerialNo) {
+        if (!isReplacementNewerThanCurrent(tm, value.replacementDate)) return tm;
+        return { ...tm, currentStatus: value.removedStatus || '취거', isSpare: false, currentTrain: '', currentCar: '', currentPosition: '', sourceType: 'manual_added' as const, updatedAt: now };
+      }
+      if (tm.serialNo === value.installedSerialNo) {
+        foundInstalled = true;
+        if (!isReplacementNewerThanCurrent(tm, value.replacementDate)) return tm;
+        return { ...tm, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, sourceType: 'manual_added' as const, updatedAt: now };
+      }
+      return tm;
+    });
     if (value.installedSerialNo && !foundInstalled) next.push({ serialNo: value.installedSerialNo, manufacturer: '', manufactureYear: null, ageYear: 0, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, sourceType: 'manual_added', createdAt: now, updatedAt: now });
     const nextHistory = [value, ...history], nextRisks = calculateAllRisks(next, nextHistory, severities, settings);
     setTms(next); setHistory(nextHistory); await saveReplacementAtomic(value, next, nextRisks); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
