@@ -3,7 +3,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } fr
 import { LockKeyhole, TrainFront } from 'lucide-react';
 import { auth, firebaseConfigured } from '../lib/firebase';
 
-const APP_PASSCODE = '0628';
+const APP_PASSCODE = '6241';
 const PASSCODE_KEY = 'tm_cbm_passcode_ok';
 
 export default function LoginGate({ children }: { children: ReactNode }) {
