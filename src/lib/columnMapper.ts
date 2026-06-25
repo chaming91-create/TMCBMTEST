@@ -1,14 +1,16 @@
 export type ImportType='tm'|'replacement';
-export const TM_FIELDS={serialNo:'시리얼번호',manufacturer:'제조사',manufactureYear:'제작년도',currentStatus:'현재상태',isSpare:'예비품 여부',currentTrain:'편성',currentCar:'호차',currentPosition:'위치',installDate:'취부일자',note:'비고'} as const;
-export const REPLACEMENT_FIELDS={replacementId:'교체 ID',replacementDate:'교체일자',trainNo:'편성',carNo:'호차',position:'위치',removedSerialNo:'취거 TM 시리얼번호',removedManufactureYear:'취거 TM 제작년도',removedManufacturer:'취거 TM 제조사',removedStatus:'취거품 상태',installedSerialNo:'취부 TM 시리얼번호',installedManufactureYear:'취부 TM 제작년도',installedManufacturer:'취부 TM 제조사',installedStatus:'취부품 상태',replacementReason:'교체사유',failureType:'고장유형',severityClass:'고장심각도',severityScore:'심각도/위험 점수',detail:'세부 고장내용',actionTaken:'조치내용',note:'비고'} as const;
+export const TM_FIELDS={tmId:'TM_ID',serialNo:'시리얼번호',manufacturer:'제조사',manufactureYear:'제작년도',currentStatus:'현재상태',isSpare:'예비품 여부',currentTrain:'편성',currentCar:'차호',currentUnit:'위수',currentPosition:'위치',installDate:'교환일자',note:'현황비고'} as const;
+export const REPLACEMENT_FIELDS={replacementId:'교체 ID',replacementDate:'교체일자',trainNo:'편성',carNo:'호차',position:'위치',removedSerialNo:'취거 TM 시리얼번호',removedManufactureYear:'취거 TM 제작년도',removedManufacturer:'취거 TM 제조사',removedStatus:'취거품 상태',installedSerialNo:'취부 TM 시리얼번호',installedManufactureYear:'취부 TM 제작년도',installedManufacturer:'취부 TM 제조사',installedStatus:'취부품 상태',replacementReason:'교체사유',failureType:'고장유형',severityClass:'고장심각도',severityScore:'심각도/위험 점수',failureReplacement:'고장성교체여부',detail:'세부 고장내용',actionTaken:'조치내용',note:'비고'} as const;
 const aliases:Record<string,string[]>={
-  serialNo:['serialno','serial','시리얼번호','시리얼','tm번호','tmserialno','제조번호'],
+  tmId:['tmid','tm_id','tm번호','tmno'],
+  serialNo:['serialno','serial','시리얼번호','시리얼','tm시리얼','tmserialno','제조번호'],
   manufacturer:['제조사','제작사','maker','manufacturer'],
   manufactureYear:['제작년도','제조년도','제작연도','생산년도','manufactureyear'],
   currentStatus:['현재상태','상태','운영상태','status'],
   isSpare:['예비품여부','예비품','spare'],
   currentTrain:['편성','편성번호','train','trainno'],
   currentCar:['호차','차량','차호','car','carno'],
+  currentUnit:['위수','unit','currentunit'],
   currentPosition:['위치','취부위치','장착위치','position'],
   installDate:['교환일자','취부일자','장착일자','설치일자','installdate'],
   note:['비고','현황비고','note','remark','취거품상태조치비고'],
@@ -29,6 +31,7 @@ const aliases:Record<string,string[]>={
   failureType:['고장유형','고장유형선택','고장종류','불량유형','failuretype'],
   severityClass:['고장심각도','심각도','severityclass'],
   severityScore:['심각도점수','위험점수','severityscore'],
+  failureReplacement:['고장성교체여부','고장성교체여부자동','failurereplacement','isfailure'],
   detail:['세부고장내용','고장내용','상세내용','detail'],
   actionTaken:['조치내용','정비내용','처리내용','actiontaken']
 };

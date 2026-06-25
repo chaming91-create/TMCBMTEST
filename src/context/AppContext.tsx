@@ -4,7 +4,7 @@ import type { ReplacementHistory } from '../types/replacement';
 import type { RiskScore, RiskSettings, ValidationIssue, AuditLog } from '../types/risk';
 import { DEFAULT_SETTINGS, DEFAULT_SEVERITIES } from '../lib/defaults';
 import { calculateAllRisks } from '../lib/riskCalculator';
-import { applyHistoryImportToTmState, isReplacementNewerThanCurrent } from '../lib/tmState';
+import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent } from '../lib/tmState';
 import { validateData } from '../lib/validators';
 import { addAudit, backupDatabase, replaceHistoryData, replaceTmData, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
 import { firebaseConfigured } from '../lib/firebase';
@@ -44,15 +44,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
   const setTmImport = async (value: TmMaster[], note = '취부현황 엑셀 업로드') => {
     await backupDatabase({ tms, history, risks, severities, settings });
-    const nextRisks = calculateAllRisks(value, history, severities, settings);
-    setTms(value); await replaceTmData(value, nextRisks); await log('EXCEL_IMPORT', 'tm_master', '', tms, value, note);
+    const enriched = enrichTmLocationsFromReplacementHistory(value, history);
+    const nextRisks = calculateAllRisks(enriched, history, severities, settings);
+    setTms(enriched); await replaceTmData(enriched, nextRisks); await log('EXCEL_IMPORT', 'tm_master', '', tms, enriched, note);
   };
   const setHistoryImport = async (value: ReplacementHistory[], note = '교체현황 엑셀 업로드', severityOverride?: SeverityMaster[]) => {
     await backupDatabase({ tms, history, risks, severities, settings });
     const effectiveSeverities = severityOverride?.length ? severityOverride : severities;
     if (severityOverride?.length) setSeverities(severityOverride);
     const now = new Date().toISOString();
-    const nextTms = applyHistoryImportToTmState(tms, value, settings.referenceYear, now), nextRisks = calculateAllRisks(nextTms, value, effectiveSeverities, settings);
+    const withHistoryOnly = applyHistoryImportToTmState(tms, value, settings.referenceYear, now), nextTms = enrichTmLocationsFromReplacementHistory(withHistoryOnly, value), nextRisks = calculateAllRisks(nextTms, value, effectiveSeverities, settings);
     setTms(nextTms); setHistory(value); await replaceTmData(nextTms, nextRisks); await replaceHistoryData(value, nextRisks); await log('EXCEL_IMPORT', 'replacement_history', '', history, value, note);
   };
   const addReplacement = async (value: ReplacementHistory) => {
@@ -61,16 +62,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const next = tms.map(tm => {
       if (tm.serialNo === value.removedSerialNo) {
         if (!isReplacementNewerThanCurrent(tm, value.replacementDate)) return tm;
-        return { ...tm, currentStatus: value.removedStatus || '취거', isSpare: false, currentTrain: '', currentCar: '', currentPosition: '', sourceType: 'manual_added' as const, updatedAt: now };
+        return { ...tm, currentStatus: value.removedStatus || '취거', isSpare: false, currentTrain: '', currentCar: '', currentPosition: '', locationSource: '웹앱 신규 입력' as const, inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added' as const, updatedAt: now };
       }
       if (tm.serialNo === value.installedSerialNo) {
         foundInstalled = true;
         if (!isReplacementNewerThanCurrent(tm, value.replacementDate)) return tm;
-        return { ...tm, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, sourceType: 'manual_added' as const, updatedAt: now };
+        return { ...tm, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, locationSource: '웹앱 신규 입력' as const, inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added' as const, updatedAt: now };
       }
       return tm;
     });
-    if (value.installedSerialNo && !foundInstalled) next.push({ serialNo: value.installedSerialNo, manufacturer: '', manufactureYear: null, ageYear: 0, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, sourceType: 'manual_added', createdAt: now, updatedAt: now });
+    if (value.installedSerialNo && !foundInstalled) next.push({ serialNo: value.installedSerialNo, manufacturer: '', manufactureYear: null, ageYear: 0, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, sourceType: 'manual_added', locationSource: '웹앱 신규 입력', inferredFromReplacement: false, inferredReplacementDate: '', createdAt: now, updatedAt: now });
     const nextHistory = [value, ...history], nextRisks = calculateAllRisks(next, nextHistory, severities, settings);
     setTms(next); setHistory(nextHistory); await saveReplacementAtomic(value, next, nextRisks); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
   };
