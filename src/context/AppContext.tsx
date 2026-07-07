@@ -11,13 +11,14 @@ import { firebaseConfigured } from '../lib/firebase';
 
 interface State { tms: TmMaster[]; history: ReplacementHistory[]; risks: RiskScore[]; severities: SeverityMaster[]; settings: RiskSettings; issues: ValidationIssue[]; setTmImport: (v: TmMaster[], note?: string) => Promise<void>; setHistoryImport: (v: ReplacementHistory[], note?: string, severityOverride?: SeverityMaster[]) => Promise<void>; addReplacement: (v: ReplacementHistory) => Promise<void>; updateSettings: (s: RiskSettings, sm: SeverityMaster[]) => Promise<void>; log: (eventType: string, targetTable: string, serialNo: string, beforeValue: unknown, afterValue: unknown, note: string) => Promise<void>; }
 const C = createContext<State | null>(null);
-const load = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || '') as T; } catch { return fallback; } };
+const legacyKeys: Record<string, string> = { ai_parts_tms: 'cbm_tms', ai_parts_history: 'cbm_history', ai_parts_severities: 'cbm_severities', ai_parts_settings: 'cbm_settings', ai_parts_audit: 'cbm_audit' };
+const load = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || localStorage.getItem(legacyKeys[key] || '') || '') as T; } catch { return fallback; } };
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [tms, setTms] = useState<TmMaster[]>(() => load('cbm_tms', []));
-  const [history, setHistory] = useState<ReplacementHistory[]>(() => load('cbm_history', []));
-  const [severities, setSeverities] = useState<SeverityMaster[]>(() => load('cbm_severities', DEFAULT_SEVERITIES));
-  const [settings, setSettings] = useState<RiskSettings>(() => load('cbm_settings', DEFAULT_SETTINGS));
+  const [tms, setTms] = useState<TmMaster[]>(() => load('ai_parts_tms', []));
+  const [history, setHistory] = useState<ReplacementHistory[]>(() => load('ai_parts_history', []));
+  const [severities, setSeverities] = useState<SeverityMaster[]>(() => load('ai_parts_severities', DEFAULT_SEVERITIES));
+  const [settings, setSettings] = useState<RiskSettings>(() => load('ai_parts_settings', DEFAULT_SETTINGS));
   const risks = useMemo(() => calculateAllRisks(tms, history, severities, settings), [tms, history, severities, settings]);
   const issues = useMemo(() => validateData(tms, history, severities, settings), [tms, history, severities, settings]);
 
@@ -31,15 +32,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ];
     return () => stops.forEach(stop => stop());
   }, []);
-  useEffect(() => localStorage.setItem('cbm_tms', JSON.stringify(tms)), [tms]);
-  useEffect(() => localStorage.setItem('cbm_history', JSON.stringify(history)), [history]);
-  useEffect(() => localStorage.setItem('cbm_settings', JSON.stringify(settings)), [settings]);
-  useEffect(() => localStorage.setItem('cbm_severities', JSON.stringify(severities)), [severities]);
+  useEffect(() => localStorage.setItem('ai_parts_tms', JSON.stringify(tms)), [tms]);
+  useEffect(() => localStorage.setItem('ai_parts_history', JSON.stringify(history)), [history]);
+  useEffect(() => localStorage.setItem('ai_parts_settings', JSON.stringify(settings)), [settings]);
+  useEffect(() => localStorage.setItem('ai_parts_severities', JSON.stringify(severities)), [severities]);
 
   const log = async (eventType: string, targetTable: string, targetSerialNo: string, beforeValue: unknown, afterValue: unknown, userNote: string) => {
     const entry: AuditLog = { logId: crypto.randomUUID(), eventTime: new Date().toISOString(), eventType, targetTable, targetSerialNo, beforeValue, afterValue, userNote };
-    const logs = load<AuditLog[]>('cbm_audit', []);
-    localStorage.setItem('cbm_audit', JSON.stringify([entry, ...logs].slice(0, 1000)));
+    const logs = load<AuditLog[]>('ai_parts_audit', []);
+    localStorage.setItem('ai_parts_audit', JSON.stringify([entry, ...logs].slice(0, 1000)));
     await addAudit(entry);
   };
   const setTmImport = async (value: TmMaster[], note = '취부현황 엑셀 업로드') => {
@@ -75,7 +76,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const nextHistory = [value, ...history], nextRisks = calculateAllRisks(next, nextHistory, severities, settings);
     setTms(next); setHistory(nextHistory); await saveReplacementAtomic(value, next, nextRisks); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
   };
-  const updateSettings = async (value: RiskSettings, masters: SeverityMaster[]) => { setSettings(value); setSeverities(masters); const next = calculateAllRisks(tms, history, masters, value); await saveRemoteSettings(value, masters, next); await log('SETTINGS_UPDATE', 'settings', '', settings, value, '리스크 설정 변경 및 재계산'); };
+  const updateSettings = async (value: RiskSettings, masters: SeverityMaster[]) => { setSettings(value); setSeverities(masters); const next = calculateAllRisks(tms, history, masters, value); await saveRemoteSettings(value, masters, next); await log('SETTINGS_UPDATE', 'settings', '', settings, value, '위험도 설정 변경 및 재계산'); };
   return <C.Provider value={{ tms, history, risks, severities, settings, issues, setTmImport, setHistoryImport, addReplacement, updateSettings, log }}>{children}</C.Provider>;
 }
 export const useApp = () => { const value = useContext(C); if (!value) throw new Error('AppProvider가 필요합니다.'); return value; };

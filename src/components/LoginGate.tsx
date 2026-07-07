@@ -4,7 +4,7 @@ import { LockKeyhole, TrainFront } from 'lucide-react';
 import { auth, firebaseConfigured } from '../lib/firebase';
 
 const APP_PASSCODE = '6241';
-const PASSCODE_KEY = 'tm_cbm_passcode_ok';
+const PASSCODE_KEY = 'ai_parts_passcode_ok';
 
 export default function LoginGate({ children }: { children: ReactNode }) {
   const [passcodeOk, setPasscodeOk] = useState(() => sessionStorage.getItem(PASSCODE_KEY) === 'Y');
@@ -43,7 +43,7 @@ export default function LoginGate({ children }: { children: ReactNode }) {
         setError('비밀번호를 확인하세요.');
       }}>
         <div className="login-logo"><TrainFront /></div>
-        <h1>TM-CBM 접근 확인</h1>
+        <h1>AI 주요부품 관리 프로그램 접근 확인</h1>
         <p>비밀번호를 아는 사용자만 접근할 수 있습니다.</p>
         <label>비밀번호<input type="password" inputMode="numeric" autoComplete="current-password" value={passcode} onChange={(event) => setPasscode(event.target.value)} required autoFocus /></label>
         {error && <div className="form-error">{error}</div>}
@@ -65,7 +65,7 @@ export default function LoginGate({ children }: { children: ReactNode }) {
         }
       }}>
         <div className="login-logo"><TrainFront /></div>
-        <h1>TM-CBM 로그인</h1>
+        <h1>AI 주요부품 관리 프로그램 로그인</h1>
         <p>승인된 사용자만 접근할 수 있습니다.</p>
         <label>이메일<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
         <label>비밀번호<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>

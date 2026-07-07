@@ -1,4 +1,4 @@
-# 철도차량 TM 상태기반 모니터링(CBM)
+# AI 주요부품 관리 프로그램
 
 견인전동기 취부현황, 교체이력, 고장심각도, MKBF 기반 위험도를 통합 관리하는 React + TypeScript + Firebase 웹앱입니다. 화면과 다운로드 컬럼은 한글로 제공됩니다.
 
@@ -8,9 +8,9 @@
 - 업로드 미리보기 및 중복 시리얼, 중복 위치, 연도, 날짜, 심각도 등 데이터 검증
 - Firestore 반영 전 자동 백업, 원본 엑셀 Firebase Storage 보관, 변경이력 저장
 - 신규 교체 입력 시 취거/취부 TM 상태와 위치 동시 갱신
-- Weibull 노후도, Empirical-Bayes 고장빈도, 심각도 누적, MKBF 기반 리스크 자동 계산
+- Weibull 노후도, Empirical-Bayes 고장빈도, 심각도 누적, MKBF 기반 위험도 자동 계산
 - 9개 한글 화면, 대시보드 차트, 상세이력, 설정값 변경 및 전체 재계산
-- TM 현황, 교체현황, 리스크, 검증결과 및 통합 엑셀 다운로드
+- TM 현황, 교체현황, 위험도, 검증결과 및 통합 엑셀 다운로드
 
 ## 빠른 실행
 
@@ -71,11 +71,11 @@ firebase deploy
 | `risk_score` | `serialNo` | A/F/T/M 및 최종 위험도 |
 | `audit_log` | `logId` | 입력·업로드·설정 변경이력 |
 | `backups` | 타임스탬프 | DB 반영 전 데이터 스냅샷 |
-| `settings/risk` | 고정 문서 | 리스크 계산 설정 |
+| `settings/risk` | 고정 문서 | 위험도 계산 설정 |
 
 원본 엑셀은 Storage의 `excel-original/` 경로에 저장됩니다.
 
-## 리스크 계산
+## 위험도 계산
 
 기본 산식은 다음과 같습니다.
 
@@ -105,11 +105,11 @@ src/components/       9개 업무 화면과 공통 UI
 src/context/          앱 데이터 상태 및 업무 처리 흐름
 src/lib/firebase.ts   Firebase 초기화
 src/lib/excelParser.ts 엑셀 읽기/변환/내보내기
-src/lib/riskCalculator.ts 리스크 계산
+src/lib/riskCalculator.ts 위험도 계산
 src/lib/validators.ts 데이터 정합성 검증
 src/lib/firestoreService.ts Firestore/Storage 저장
 src/lib/columnMapper.ts 컬럼 동의어와 자동 매핑
-src/types/            TM, 교체, 리스크 타입
+src/types/            TM, 교체, 위험도 타입
 ```
 
 ## 유지보수
