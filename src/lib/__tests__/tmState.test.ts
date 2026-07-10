@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ReplacementHistory } from '../../types/replacement';
 import type { TmMaster } from '../../types/tm';
-import { applyHistoryImportToTmState, isReplacementNewerThanCurrent, keepLatestTmByCurrentLocation } from '../tmState';
+import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent, keepLatestTmByCurrentLocation } from '../tmState';
 
 const tm = (overrides: Partial<TmMaster>): TmMaster => ({
   serialNo: 'TM-1',
@@ -104,5 +104,24 @@ describe('applyHistoryImportToTmState', () => {
       installDate: '2024-05-06',
       sourceType: 'history_only',
     });
+  });
+});
+
+
+describe('latest-date current state reconciliation', () => {
+  it('applies a newer installed replacement without a date mismatch warning', () => {
+    const next = enrichTmLocationsFromReplacementHistory(
+      [tm({ currentTrain: '101', currentCar: '1', currentPosition: 'M01', installDate: '2025-01-01' })],
+      [replacement({ removedSerialNo: 'OLD', installedSerialNo: 'TM-1', trainNo: '202', carNo: '2', position: 'M08', replacementDate: '2026-02-03' })],
+    )[0];
+    expect(next).toMatchObject({ currentTrain: '202', currentCar: '2', currentPosition: 'M08', installDate: '2026-02-03', locationDateMismatch: false });
+  });
+
+  it('keeps current-file state when it has the newer date', () => {
+    const next = enrichTmLocationsFromReplacementHistory(
+      [tm({ currentTrain: '101', currentPosition: 'M01', installDate: '2026-05-01' })],
+      [replacement({ installedSerialNo: 'TM-1', trainNo: '202', position: 'M08', replacementDate: '2025-02-03' })],
+    )[0];
+    expect(next).toMatchObject({ currentTrain: '101', currentPosition: 'M01', installDate: '2026-05-01', locationDateMismatch: false });
   });
 });

@@ -8,7 +8,6 @@ const comparableDate = (value: string) => value || '0000-00-00';
 const hasKnownValue = (value?: string) => !!value?.trim() && value.trim() !== UNKNOWN && value.trim() !== NEEDS_LOCATION;
 const isUnknownStatus = (value?: string) => !value?.trim() || value.trim() === UNKNOWN;
 const isSpareLike = (value?: string) => ['예비품', '예비', 'spare'].some(token => (value || '').toLowerCase().includes(token.toLowerCase()));
-const validDateValue = (value?: string) => !!value && !Number.isNaN(new Date(value).getTime());
 
 export function isReplacementNewerThanCurrent(tm: TmMaster, replacementDate: string): boolean {
   if (!replacementDate || !tm.installDate) return true;
@@ -62,6 +61,16 @@ export function keepLatestTmByCurrentLocation(rows: TmMaster[]): TmMaster[] {
 
 export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[], replacementRows: ReplacementHistory[]): TmMaster[] {
   const latestInstalled = buildLatestInstalledReplacementIndex(replacementRows);
+  const latestEvent = new Map<string, { row: ReplacementHistory; kind: "installed" | "removed" }>();
+  replacementRows.forEach(row => {
+    if (!row.replacementDate) return;
+    ([["removed", row.removedSerialNo], ["installed", row.installedSerialNo]] as const).forEach(([kind, rawSerial]) => {
+      const serial = rawSerial?.trim();
+      if (!serial || serial === "-") return;
+      const current = latestEvent.get(serial);
+      if (!current || comparableDate(row.replacementDate) >= comparableDate(current.row.replacementDate)) latestEvent.set(serial, { row, kind });
+    });
+  });
 
   return currentRows.map((tm) => {
     if (isHistoryOnly(tm)) return tm;
@@ -76,6 +85,21 @@ export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[],
       locationDateWarning: '',
     };
 
+    const event = latestEvent.get(tm.serialNo);
+    if (event && comparableDate(event.row.replacementDate) > comparableDate(next.installDate)) {
+      next.installDate = event.row.replacementDate;
+      next.locationSource = "교체현황 최신 부착이력";
+      next.inferredFromReplacement = true;
+      next.inferredReplacementDate = event.row.replacementDate;
+      if (event.kind === "installed") {
+        next.currentStatus = event.row.installedStatus || "운행중"; next.isSpare = false;
+        next.currentTrain = event.row.trainNo; next.currentCar = event.row.carNo; next.currentUnit = event.row.carNo; next.currentPosition = event.row.position;
+      } else {
+        next.currentStatus = event.row.removedStatus || "취거"; next.isSpare = isSpareLike(next.currentStatus);
+        next.currentTrain = next.isSpare ? "예비품" : ""; next.currentCar = ""; next.currentUnit = ""; next.currentPosition = next.isSpare ? next.currentPosition : "";
+      }
+    }
+
     if (isSpareLike(next.currentStatus) || next.isSpare) {
       next.isSpare = true;
       next.locationSource = next.locationSource || '현황파일';
@@ -87,7 +111,7 @@ export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[],
     const missingPosition = !hasKnownValue(next.currentPosition);
     const needsLocationSupplement = missingTrain || missingCar || missingPosition;
 
-    if (installed && needsLocationSupplement) {
+    if (installed && needsLocationSupplement && event?.kind !== "removed") {
       if (missingTrain && hasKnownValue(installed.trainNo)) next.currentTrain = installed.trainNo;
       if (missingCar && hasKnownValue(installed.carNo)) {
         next.currentCar = installed.carNo;
@@ -98,15 +122,6 @@ export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[],
       next.inferredFromReplacement = true;
       next.inferredReplacementDate = installed.replacementDate;
 
-      if (!validDateValue(next.installDate) || !validDateValue(installed.replacementDate)) {
-        next.locationDateMismatch = true;
-        next.locationDateWarning = '날짜 비교 불가, 교체파일 부착이력 기준 위치 보완';
-      } else if (next.installDate !== installed.replacementDate) {
-        next.locationDateMismatch = true;
-        next.locationDateWarning = comparableDate(installed.replacementDate) > comparableDate(next.installDate)
-          ? '교체파일 최신 부착이력이 현황파일보다 최신입니다.'
-          : '현황파일 교환일자가 교체현황 최신 부착일자보다 최신입니다.';
-      }
     }
 
     if (!hasKnownValue(next.currentPosition)) {
