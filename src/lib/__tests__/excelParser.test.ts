@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import * as XLSX from 'xlsx';
 import { describe, expect, it } from 'vitest';
 import { autoMapColumns, scoreAutoMap } from '../columnMapper';
-import { mapReplacementRows, parseReplacementHistorySheet, parseSeverityClassificationSheet, parseTMInstallationSheet, parseWorkbook, toSeverityMap, validateMasterRows, validateReplacementRows } from '../excelParser';
+import { exportHistory, mapReplacementRows, parseReplacementHistorySheet, parseSeverityClassificationSheet, parseTMInstallationSheet, parseWorkbook, toSeverityMap, validateMasterRows, validateReplacementRows } from '../excelParser';
 
 const replacementFilePath = new URL('../../../0. data2(TM_교체현황_고장심각도).xlsx', import.meta.url);
 const tmFilePath = new URL('../../../0. data1(TM 취부 현황).xlsx', import.meta.url);
@@ -53,6 +53,16 @@ describe('excelParser workbook import', () => {
     expect(rows[0]).toMatchObject({ trainNo: '모름', position: '모름', failureType: '모름', removedStatus: '모름' });
     expect(issues.some(issue => issue.category === '편성 불분명')).toBe(false);
     expect(issues.some(issue => issue.level === '오류')).toBe(false);
+  });
+
+  it('exports missing removed and installed statuses as 정보 없음', () => {
+    const rows = mapReplacementRows([
+      { 교체일자: '2024-01-02', 취거TM: 'OLD-1', 취부TM: 'NEW-1' },
+    ], { replacementDate: '교체일자', removedSerialNo: '취거TM', installedSerialNo: '취부TM', removedStatus: '취거상태', installedStatus: '취부상태' });
+    const exported = exportHistory(rows) as Array<Record<string, unknown>>;
+
+    expect(exported[0]['취거품 상태']).toBe('정보 없음');
+    expect(exported[0]['취부품 상태']).toBe('정보 없음');
   });
 
   it('treats replacement-only serials as valid past history without master-registration notices', () => {
