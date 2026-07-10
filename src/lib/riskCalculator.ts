@@ -6,7 +6,7 @@ const round=(v:number)=>Math.round(v*100)/100;
 const unknown=(v:unknown)=>!String(v??'').trim()||String(v).trim()===UNKNOWN_VALUE;
 export function calculateAgeScore(year:number|null,s:RiskSettings){if(!year||year>s.referenceYear)return 0;const age=Math.max(0,s.referenceYear-year);return round(100*(1-Math.exp(-Math.pow(age/s.weibullEta,s.weibullBeta))));}
 export function calculateMkbfScore(mkbf:number){return mkbf>0?round(100*(1-Math.exp(-(10000/mkbf)))):0;}
-export function getRiskGrade(score:number,s:RiskSettings):RiskGrade{if(score>=s.thresholds.danger)return'위험';if(score>=s.thresholds.caution)return'주의';if(score>=s.thresholds.observation)return'관찰';return'정상';}
+export function getRiskGrade(score:number,_s:RiskSettings):RiskGrade{if(score>=80)return'위험';if(score>50)return'경고';if(score>30)return'관찰';return'안전';}
 const isY=(v:unknown)=>['y','yes','true','1','예','고장성'].includes(String(v??'').trim().toLowerCase());
 const isFailure=(r:ReplacementHistory,s:RiskSettings)=>isY(r.failureReplacement)||((r.severityScore??0)>0&&r.failureCode!=='FC00')||s.failureKeywords.some(k=>`${r.replacementReason} ${r.failureType} ${r.removedStatus}`.includes(k));
 const severity=(r:ReplacementHistory,sm:SeverityMaster[])=>typeof r.severityScore==='number'?r.severityScore:sm.find(v=>v.isActive&&v.failureType===r.failureType)?.severityScore??0;
