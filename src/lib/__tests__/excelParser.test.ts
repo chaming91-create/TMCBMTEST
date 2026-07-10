@@ -55,6 +55,16 @@ describe('excelParser workbook import', () => {
     expect(issues.some(issue => issue.level === '오류')).toBe(false);
   });
 
+  it('treats replacement-only serials as valid past history without master-registration notices', () => {
+    const rows = mapReplacementRows([
+      { 교체일자: '2024-01-02', 취거TM: 'PAST-ONLY-1', 취부TM: 'PAST-ONLY-2' },
+    ], { replacementDate: '교체일자', removedSerialNo: '취거TM', installedSerialNo: '취부TM' });
+    const issues = validateReplacementRows(rows, [], new Map());
+
+    expect(issues.some(issue => issue.category === '마스터 미등록 부품')).toBe(false);
+    expect(issues.some(issue => issue.message.includes('취부현황 마스터에 없습니다'))).toBe(false);
+  });
+
   it('does not flag spare storage locations as position errors', () => {
     const wb = XLSX.read(readFileSync(tmFilePath), { type: 'buffer', cellDates: true });
     const rows = parseTMInstallationSheet(wb, 2026);
