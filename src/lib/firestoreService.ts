@@ -1,9 +1,10 @@
-import { collection, doc, getDocs, onSnapshot, runTransaction, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, onSnapshot, runTransaction, setDoc, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
 import { db, storage } from './firebase';
 import type { TmMaster, SeverityMaster } from '../types/tm';
 import type { ReplacementHistory } from '../types/replacement';
 import type { RiskScore, RiskSettings, AuditLog } from '../types/risk';
+import type { DataSnapshot } from '../types/snapshot';
 
 export type AppData = { tms: TmMaster[]; history: ReplacementHistory[]; risks: RiskScore[]; severities: SeverityMaster[]; settings: RiskSettings };
 
@@ -31,6 +32,9 @@ export async function backupDatabase(data: AppData) { if (db) await setDoc(doc(d
 export async function replaceTmData(data: TmMaster[], risks: RiskScore[]) { await clearCollection('tm_master'); await putMany('tm_master', data, v => v.serialNo); await putMany('risk_score', risks, v => v.serialNo); }
 export async function replaceHistoryData(data: ReplacementHistory[], risks: RiskScore[]) { await clearCollection('replacement_history'); await putMany('replacement_history', data, v => v.replacementId); await putMany('risk_score', risks, v => v.serialNo); }
 export async function resetDatabase() { await Promise.all(['tm_master','replacement_history','risk_score','severity_master'].map(clearCollection)); if (db) await clearCollection('settings'); }
+export async function saveDataSnapshot(snapshot: DataSnapshot) { if (db) await setDoc(doc(db,'data_snapshots',snapshot.snapshotId),snapshot); }
+export async function deleteDataSnapshot(snapshotId:string) { if (db) await deleteDoc(doc(db,'data_snapshots',snapshotId)); }
+export async function restoreDatabase(data:AppData) { await resetDatabase(); await replaceTmData(data.tms,data.risks); await replaceHistoryData(data.history,data.risks); await saveSettings(data.settings,data.severities,data.risks); }
 export async function saveSettings(settings: RiskSettings, severities: SeverityMaster[], risks: RiskScore[]) { if (!db) return; await setDoc(doc(db, 'settings', 'risk'), settings); await putMany('severity_master', severities, v => v.failureType); await putMany('risk_score', risks, v => v.serialNo); }
 export async function addAudit(log: AuditLog) { if (db) await setDoc(doc(db, 'audit_log', log.logId), log); }
 export async function uploadOriginal(file: File, type: string) { if (storage) await uploadBytes(ref(storage, `excel-original/${Date.now()}_${type}_${file.name}`), file); }

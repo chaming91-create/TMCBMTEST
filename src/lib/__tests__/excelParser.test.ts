@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import * as XLSX from 'xlsx';
 import { describe, expect, it } from 'vitest';
 import { autoMapColumns, scoreAutoMap } from '../columnMapper';
@@ -7,7 +7,7 @@ import { exportHistory, mapReplacementRows, parseReplacementHistorySheet, parseS
 const replacementFilePath = new URL('../../../0. data2(TM_교체현황_고장심각도).xlsx', import.meta.url);
 const tmFilePath = new URL('../../../0. data1(TM 취부 현황) (3).xlsx', import.meta.url);
 
-describe('excelParser workbook import', () => {
+describe.skipIf(!existsSync(replacementFilePath)||!existsSync(tmFilePath))('excelParser workbook import', () => {
   it('selects the data2 replacement sheet without relying on automatic formula columns', async () => {
     const file = new File([readFileSync(replacementFilePath)], '0. data2(TM_교체현황_고장심각도).xlsx');
     const first = await parseWorkbook(file);
