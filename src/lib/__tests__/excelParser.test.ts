@@ -37,7 +37,8 @@ describe.skipIf(!existsSync(replacementFilePath)||!existsSync(tmFilePath))('exce
   it('parses the latest TM workbook confirmation date and numeric positions', () => {
     const wb = XLSX.read(readFileSync(tmFilePath), { type: 'buffer', cellDates: true });
     const rows = parseTMInstallationSheet(wb, 2026);
-    expect(rows[0]).toMatchObject({ tmId: 'TM-111-001', confirmedAt: '2026-08-12', installDate: '', currentTrain:'111', currentUnit:'1111', currentPosition: 'M01' });
+    expect(rows[0]).toMatchObject({ tmId: 'TM-111-001', confirmedAt: '2026-08-12', installDate: '', currentTrain:'111', currentCar:'1111', currentUnit:'1', currentPosition: '1' });
+    expect(rows.filter(row=>!row.isSpare).every(row=>['1','2','3','4'].includes(row.currentUnit||''))).toBe(true);
     expect(rows).toHaveLength(171);
   });
 

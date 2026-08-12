@@ -94,7 +94,7 @@ export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[],
       next.inferredReplacementDate = event.row.replacementDate;
       if (event.kind === "installed") {
         next.currentStatus = event.row.installedStatus || "운행중"; next.isSpare = false;
-        next.currentTrain = event.row.trainNo; next.currentCar = event.row.carNo; next.currentUnit = event.row.carNo; next.currentPosition = event.row.position;
+        next.currentTrain = event.row.trainNo; next.currentCar = event.row.carNo; next.currentUnit = event.row.position; next.currentPosition = event.row.position;
       } else {
         next.currentStatus = event.row.removedStatus || "취거"; next.isSpare = isSpareLike(next.currentStatus);
         next.currentTrain = next.isSpare ? "예비품" : ""; next.currentCar = ""; next.currentUnit = ""; next.currentPosition = next.isSpare ? next.currentPosition : "";
@@ -116,7 +116,7 @@ export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[],
       if (missingTrain && hasKnownValue(installed.trainNo)) next.currentTrain = installed.trainNo;
       if (missingCar && hasKnownValue(installed.carNo)) {
         next.currentCar = installed.carNo;
-        next.currentUnit = installed.carNo;
+        next.currentUnit = installed.position;
       }
       if (missingPosition && hasKnownValue(installed.position)) next.currentPosition = installed.position;
       next.locationSource = '교체현황 최신 부착이력';
@@ -204,6 +204,7 @@ export function applyHistoryImportToTmState(
       installed.currentTrain = row.trainNo;
       installed.currentCar = row.carNo;
       installed.currentPosition = row.position;
+      installed.currentUnit = row.position;
       installed.installDate = row.replacementDate;
       installed.locationSource = '교체현황 최신 부착이력';
       installed.inferredFromReplacement = true;

@@ -111,18 +111,18 @@ describe('applyHistoryImportToTmState', () => {
 describe('latest-date current state reconciliation', () => {
   it('keeps the confirmed workbook location when all replacement events are older', () => {
     const next = enrichTmLocationsFromReplacementHistory(
-      [tm({ confirmedAt:'2026-08-12',installDate:'',currentTrain:'111',currentCar:'1111',currentPosition:'M01' })],
+      [tm({ confirmedAt:'2026-08-12',installDate:'',currentTrain:'111',currentCar:'1111',currentUnit:'1',currentPosition:'1' })],
       [replacement({ installedSerialNo:'TM-1',trainNo:'106',carNo:'9999',position:'M09',replacementDate:'2026-04-07' })],
     )[0];
-    expect(next).toMatchObject({currentTrain:'111',currentCar:'1111',currentPosition:'M01',confirmedAt:'2026-08-12',installDate:'',locationSource:'현황파일'});
+    expect(next).toMatchObject({currentTrain:'111',currentCar:'1111',currentUnit:'1',currentPosition:'1',confirmedAt:'2026-08-12',installDate:'',locationSource:'현황파일'});
   });
 
   it('applies only a replacement later than the final confirmation date', () => {
     const next = enrichTmLocationsFromReplacementHistory(
-      [tm({ confirmedAt:'2026-08-12',installDate:'',currentTrain:'111',currentCar:'1111',currentPosition:'M01' })],
+      [tm({ confirmedAt:'2026-08-12',installDate:'',currentTrain:'111',currentCar:'1111',currentUnit:'1',currentPosition:'1' })],
       [replacement({ installedSerialNo:'TM-1',trainNo:'112',carNo:'1212',position:'M02',replacementDate:'2026-08-13' })],
     )[0];
-    expect(next).toMatchObject({currentTrain:'112',currentCar:'1212',currentPosition:'M02',confirmedAt:'2026-08-12',installDate:'2026-08-13',locationSource:'교체현황 최신 부착이력'});
+    expect(next).toMatchObject({currentTrain:'112',currentCar:'1212',currentUnit:'M02',currentPosition:'M02',confirmedAt:'2026-08-12',installDate:'2026-08-13',locationSource:'교체현황 최신 부착이력'});
   });
   it('applies a newer installed replacement without a date mismatch warning', () => {
     const next = enrichTmLocationsFromReplacementHistory(
