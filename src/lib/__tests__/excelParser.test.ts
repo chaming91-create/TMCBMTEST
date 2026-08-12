@@ -5,7 +5,7 @@ import { autoMapColumns, scoreAutoMap } from '../columnMapper';
 import { exportHistory, mapReplacementRows, parseReplacementHistorySheet, parseSeverityClassificationSheet, parseTMInstallationSheet, parseWorkbook, toSeverityMap, validateMasterRows, validateReplacementRows } from '../excelParser';
 
 const replacementFilePath = new URL('../../../0. data2(TM_교체현황_고장심각도).xlsx', import.meta.url);
-const tmFilePath = new URL('../../../0. data1(TM 취부 현황).xlsx', import.meta.url);
+const tmFilePath = new URL('../../../0. data1(TM 취부 현황) (3).xlsx', import.meta.url);
 
 describe('excelParser workbook import', () => {
   it('selects the data2 replacement sheet without relying on automatic formula columns', async () => {
@@ -31,6 +31,13 @@ describe('excelParser workbook import', () => {
     const mapping = autoMapColumns(['시리얼번호', '교환일자', '편성', '위치'], 'tm');
 
     expect(mapping.installDate).toBe('교환일자');
+  });
+
+  it('parses the latest TM workbook confirmation date and numeric positions', () => {
+    const wb = XLSX.read(readFileSync(tmFilePath), { type: 'buffer', cellDates: true });
+    const rows = parseTMInstallationSheet(wb, 2026);
+    expect(rows[0]).toMatchObject({ tmId: 'TM-111-001', installDate: '2026-08-12', currentPosition: 'M01' });
+    expect(rows).toHaveLength(171);
   });
 
   it('keeps replacement rows when installed position is missing and marks it unknown', () => {

@@ -5,11 +5,12 @@ import type { RiskScore, RiskSettings, ValidationIssue, AuditLog } from '../type
 import { DEFAULT_SETTINGS, DEFAULT_SEVERITIES } from '../lib/defaults';
 import { calculateAllRisks } from '../lib/riskCalculator';
 import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent } from '../lib/tmState';
+import { mergeHistoryImports, mergeTmImports } from '../lib/importMerge';
 import { validateData } from '../lib/validators';
-import { addAudit, backupDatabase, replaceHistoryData, replaceTmData, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
+import { addAudit, backupDatabase, replaceHistoryData, replaceTmData, resetDatabase, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
 import { firebaseConfigured } from '../lib/firebase';
 
-interface State { tms: TmMaster[]; history: ReplacementHistory[]; risks: RiskScore[]; severities: SeverityMaster[]; settings: RiskSettings; issues: ValidationIssue[]; setTmImport: (v: TmMaster[], note?: string) => Promise<void>; setHistoryImport: (v: ReplacementHistory[], note?: string, severityOverride?: SeverityMaster[]) => Promise<void>; addReplacement: (v: ReplacementHistory) => Promise<void>; updateSettings: (s: RiskSettings, sm: SeverityMaster[]) => Promise<void>; log: (eventType: string, targetTable: string, serialNo: string, beforeValue: unknown, afterValue: unknown, note: string) => Promise<void>; }
+interface State { tms: TmMaster[]; history: ReplacementHistory[]; risks: RiskScore[]; severities: SeverityMaster[]; settings: RiskSettings; issues: ValidationIssue[]; setTmImport: (v: TmMaster[], note?: string) => Promise<number>; setHistoryImport: (v: ReplacementHistory[], note?: string, severityOverride?: SeverityMaster[]) => Promise<number>; resetAllData: () => Promise<void>; addReplacement: (v: ReplacementHistory) => Promise<void>; updateSettings: (s: RiskSettings, sm: SeverityMaster[]) => Promise<void>; log: (eventType: string, targetTable: string, serialNo: string, beforeValue: unknown, afterValue: unknown, note: string) => Promise<void>; }
 const C = createContext<State | null>(null);
 const legacyKeys: Record<string, string> = { ai_parts_tms: 'cbm_tms', ai_parts_history: 'cbm_history', ai_parts_severities: 'cbm_severities', ai_parts_settings: 'cbm_settings', ai_parts_audit: 'cbm_audit' };
 const load = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || localStorage.getItem(legacyKeys[key] || '') || '') as T; } catch { return fallback; } };
@@ -45,18 +46,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
   const setTmImport = async (value: TmMaster[], note = '취부현황 엑셀 업로드') => {
     await backupDatabase({ tms, history, risks, severities, settings });
-    const enriched = enrichTmLocationsFromReplacementHistory(value, history);
+    const merged = mergeTmImports(tms, value);
+    const enriched = enrichTmLocationsFromReplacementHistory(merged, history);
     const nextRisks = calculateAllRisks(enriched, history, severities, settings);
-    setTms(enriched); await replaceTmData(enriched, nextRisks); await log('EXCEL_IMPORT', 'tm_master', '', tms, enriched, note);
+    setTms(enriched); await replaceTmData(enriched, nextRisks); await log('EXCEL_IMPORT_MERGE', 'tm_master', '', tms, enriched, note); return enriched.length;
   };
   const setHistoryImport = async (value: ReplacementHistory[], note = '교체현황 엑셀 업로드', severityOverride?: SeverityMaster[]) => {
     await backupDatabase({ tms, history, risks, severities, settings });
     const effectiveSeverities = severityOverride?.length ? severityOverride : severities;
     if (severityOverride?.length) setSeverities(severityOverride);
-    const now = new Date().toISOString();
-    const withHistoryOnly = applyHistoryImportToTmState(tms, value, settings.referenceYear, now), nextTms = enrichTmLocationsFromReplacementHistory(withHistoryOnly, value), nextRisks = calculateAllRisks(nextTms, value, effectiveSeverities, settings);
-    setTms(nextTms); setHistory(value); await replaceTmData(nextTms, nextRisks); await replaceHistoryData(value, nextRisks); await log('EXCEL_IMPORT', 'replacement_history', '', history, value, note);
+    const now = new Date().toISOString(), mergedHistory = mergeHistoryImports(history, value);
+    const withHistoryOnly = applyHistoryImportToTmState(tms, mergedHistory, settings.referenceYear, now), nextTms = enrichTmLocationsFromReplacementHistory(withHistoryOnly, mergedHistory), nextRisks = calculateAllRisks(nextTms, mergedHistory, effectiveSeverities, settings);
+    setTms(nextTms); setHistory(mergedHistory); await replaceTmData(nextTms, nextRisks); await replaceHistoryData(mergedHistory, nextRisks); await log('EXCEL_IMPORT_MERGE', 'replacement_history', '', history, mergedHistory, note); return mergedHistory.length;
   };
+  const resetAllData = async () => { await backupDatabase({ tms, history, risks, severities, settings }); await resetDatabase(); setTms([]); setHistory([]); setSeverities(DEFAULT_SEVERITIES); setSettings(DEFAULT_SETTINGS); await log('DATABASE_RESET','all','',{tms:tms.length,history:history.length},{tms:0,history:0},'새 파일 업로드를 위한 전체 초기화'); };
   const addReplacement = async (value: ReplacementHistory) => {
     const now = new Date().toISOString();
     let foundInstalled = false;
@@ -77,6 +80,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTms(next); setHistory(nextHistory); await saveReplacementAtomic(value, next, nextRisks); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
   };
   const updateSettings = async (value: RiskSettings, masters: SeverityMaster[]) => { setSettings(value); setSeverities(masters); const next = calculateAllRisks(tms, history, masters, value); await saveRemoteSettings(value, masters, next); await log('SETTINGS_UPDATE', 'settings', '', settings, value, '위험도 설정 변경 및 재계산'); };
-  return <C.Provider value={{ tms, history, risks, severities, settings, issues, setTmImport, setHistoryImport, addReplacement, updateSettings, log }}>{children}</C.Provider>;
+  return <C.Provider value={{ tms, history, risks, severities, settings, issues, setTmImport, setHistoryImport, resetAllData, addReplacement, updateSettings, log }}>{children}</C.Provider>;
 }
 export const useApp = () => { const value = useContext(C); if (!value) throw new Error('AppProvider가 필요합니다.'); return value; };

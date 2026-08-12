@@ -30,6 +30,7 @@ const putMany = async (name: string, items: object[], id: (value: any) => string
 export async function backupDatabase(data: AppData) { if (db) await setDoc(doc(db, 'backups', `${Date.now()}`), { ...data, createdAt: new Date().toISOString() }); }
 export async function replaceTmData(data: TmMaster[], risks: RiskScore[]) { await clearCollection('tm_master'); await putMany('tm_master', data, v => v.serialNo); await putMany('risk_score', risks, v => v.serialNo); }
 export async function replaceHistoryData(data: ReplacementHistory[], risks: RiskScore[]) { await clearCollection('replacement_history'); await putMany('replacement_history', data, v => v.replacementId); await putMany('risk_score', risks, v => v.serialNo); }
+export async function resetDatabase() { await Promise.all(['tm_master','replacement_history','risk_score','severity_master'].map(clearCollection)); if (db) await clearCollection('settings'); }
 export async function saveSettings(settings: RiskSettings, severities: SeverityMaster[], risks: RiskScore[]) { if (!db) return; await setDoc(doc(db, 'settings', 'risk'), settings); await putMany('severity_master', severities, v => v.failureType); await putMany('risk_score', risks, v => v.serialNo); }
 export async function addAudit(log: AuditLog) { if (db) await setDoc(doc(db, 'audit_log', log.logId), log); }
 export async function uploadOriginal(file: File, type: string) { if (storage) await uploadBytes(ref(storage, `excel-original/${Date.now()}_${type}_${file.name}`), file); }
