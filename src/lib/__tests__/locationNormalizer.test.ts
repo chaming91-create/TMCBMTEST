@@ -1,0 +1,2 @@
+import {describe,expect,it} from 'vitest';import {normalizeCarNumber,normalizeTmUnit} from '../locationNormalizer';
+describe('TM 위치 표준화',()=>{it('차량코드를 편성의 실제 호차로 바꾼다',()=>{expect(normalizeCarNumber('111','1111')).toBe('1');expect(normalizeCarNumber('111','1211')).toBe('2');expect(normalizeCarNumber('112','1712')).toBe('7')});it('위수를 M 접두사 없이 숫자로 표시한다',()=>{expect(normalizeTmUnit('M01')).toBe('1');expect(normalizeTmUnit('04')).toBe('4');expect(normalizeTmUnit(3)).toBe('3')})});
