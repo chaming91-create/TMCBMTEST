@@ -3,9 +3,10 @@ import * as XLSX from 'xlsx';
 import { describe, expect, it } from 'vitest';
 import { autoMapColumns, scoreAutoMap } from '../columnMapper';
 import { exportHistory, mapReplacementRows, parseReplacementHistorySheet, parseSeverityClassificationSheet, parseTMInstallationSheet, parseWorkbook, toSeverityMap, validateMasterRows, validateReplacementRows } from '../excelParser';
+import { applyHistoryImportToTmState,enrichTmLocationsFromReplacementHistory } from '../tmState';
 
-const replacementFilePath = new URL('../../../0. data2(TM_교체현황_고장심각도).xlsx', import.meta.url);
-const tmFilePath = new URL('../../../0. data1(TM 취부 현황) (3).xlsx', import.meta.url);
+const replacementFilePath = new URL('../../../0. data2(TM_교체현황_고장심각도) v2.xlsx', import.meta.url);
+const tmFilePath = new URL('../../../0. data1(TM 취부 현황) v2.xlsx', import.meta.url);
 
 describe.skipIf(!existsSync(replacementFilePath)||!existsSync(tmFilePath))('excelParser workbook import', () => {
   it('selects the data2 replacement sheet without relying on automatic formula columns', async () => {
@@ -36,8 +37,20 @@ describe.skipIf(!existsSync(replacementFilePath)||!existsSync(tmFilePath))('exce
   it('parses the latest TM workbook confirmation date and numeric positions', () => {
     const wb = XLSX.read(readFileSync(tmFilePath), { type: 'buffer', cellDates: true });
     const rows = parseTMInstallationSheet(wb, 2026);
-    expect(rows[0]).toMatchObject({ tmId: 'TM-111-001', installDate: '2026-08-12', currentPosition: 'M01' });
+    expect(rows[0]).toMatchObject({ tmId: 'TM-111-001', confirmedAt: '2026-08-12', installDate: '', currentTrain:'111', currentUnit:'1111', currentPosition: 'M01' });
     expect(rows).toHaveLength(171);
+  });
+
+  it('keeps only confirmed formations 111~116 as the current formation view after combining v2 files', () => {
+    const masterRows=parseTMInstallationSheet(XLSX.read(readFileSync(tmFilePath),{type:'buffer',cellDates:true}),2026);
+    const replacementBook=XLSX.read(readFileSync(replacementFilePath),{type:'buffer',cellDates:true});
+    const historyRows=parseReplacementHistorySheet(replacementBook,toSeverityMap(parseSeverityClassificationSheet(replacementBook)));
+    const combined=enrichTmLocationsFromReplacementHistory(applyHistoryImportToTmState(masterRows,historyRows,2026,'2026-08-12T00:00:00.000Z'),historyRows);
+    const current=combined.filter(tm=>tm.sourceType!=='history_only'&&!tm.isSpare);
+    const formations=[...new Set(current.map(tm=>tm.currentTrain))].sort();
+    expect(formations).toEqual(['111','112','113','114','115','116']);
+    expect(formations.map(train=>current.filter(tm=>tm.currentTrain===train).length)).toEqual([24,24,24,24,24,24]);
+    expect(validateMasterRows(masterRows).filter(issue=>issue.level==='오류')).toHaveLength(0);
   });
 
   it('keeps replacement rows when installed position is missing and marks it unknown', () => {

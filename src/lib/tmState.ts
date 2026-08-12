@@ -10,8 +10,9 @@ const isUnknownStatus = (value?: string) => !value?.trim() || value.trim() === U
 const isSpareLike = (value?: string) => ['예비품', '예비', 'spare'].some(token => (value || '').toLowerCase().includes(token.toLowerCase()));
 
 export function isReplacementNewerThanCurrent(tm: TmMaster, replacementDate: string): boolean {
-  if (!replacementDate || !tm.installDate) return true;
-  return comparableDate(replacementDate) >= comparableDate(tm.installDate);
+  const stateDate=tm.confirmedAt||tm.installDate;
+  if (!replacementDate || !stateDate) return true;
+  return tm.confirmedAt ? comparableDate(replacementDate) > comparableDate(stateDate) : comparableDate(replacementDate) >= comparableDate(stateDate);
 }
 
 function latest<T extends { date: string }>(a: T | undefined, b: T): T {
@@ -41,7 +42,7 @@ export function keepLatestTmByCurrentLocation(rows: TmMaster[]): TmMaster[] {
     const tmId = row.tmId?.trim();
     if (tmId) {
       const existing = byTmId.get(tmId);
-      if (!existing || comparableDate(row.installDate) >= comparableDate(existing.installDate)) byTmId.set(tmId, row);
+      if (!existing || comparableDate(row.confirmedAt||row.installDate) >= comparableDate(existing.confirmedAt||existing.installDate)) byTmId.set(tmId, row);
       return;
     }
 
@@ -53,7 +54,7 @@ export function keepLatestTmByCurrentLocation(rows: TmMaster[]): TmMaster[] {
 
     const key = [row.currentTrain, row.currentCar, row.currentPosition].map(value => value.trim()).join('|');
     const existing = byLocation.get(key);
-    if (!existing || comparableDate(row.installDate) >= comparableDate(existing.installDate)) byLocation.set(key, row);
+    if (!existing || comparableDate(row.confirmedAt||row.installDate) >= comparableDate(existing.confirmedAt||existing.installDate)) byLocation.set(key, row);
   });
 
   return [...byTmId.values(), ...noLocation, ...byLocation.values()];
@@ -86,7 +87,7 @@ export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[],
     };
 
     const event = latestEvent.get(tm.serialNo);
-    if (event && comparableDate(event.row.replacementDate) > comparableDate(next.installDate)) {
+    if (event && comparableDate(event.row.replacementDate) > comparableDate(next.confirmedAt||next.installDate)) {
       next.installDate = event.row.replacementDate;
       next.locationSource = "교체현황 최신 부착이력";
       next.inferredFromReplacement = true;
