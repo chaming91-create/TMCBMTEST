@@ -70,7 +70,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addReplacement = async (value: ReplacementHistory) => {
     const now = new Date().toISOString();
     let foundInstalled = false;
-    const next = tms.map(tm => {
+    const disposedSerialNo = value.removedStatus === '불용' ? value.removedSerialNo : '';
+    const next = tms.flatMap(tm => {
+      if (disposedSerialNo && tm.serialNo === disposedSerialNo) return [];
+      const updated = (() => {
       if (tm.serialNo === value.removedSerialNo) {
         if (!isReplacementNewerThanCurrent(tm, value.replacementDate)) return tm;
         return { ...tm, currentStatus: value.removedStatus || '취거', isSpare: false, currentTrain: '', currentCar: '', currentPosition: '', locationSource: '웹앱 신규 입력' as const, inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added' as const, updatedAt: now };
@@ -81,10 +84,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ...tm, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, locationSource: '웹앱 신규 입력' as const, inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added' as const, updatedAt: now };
       }
       return tm;
+      })();
+      return [updated];
     });
     if (value.installedSerialNo && !foundInstalled) next.push({ serialNo: value.installedSerialNo, manufacturer: '', manufactureYear: null, ageYear: 0, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, sourceType: 'manual_added', locationSource: '웹앱 신규 입력', inferredFromReplacement: false, inferredReplacementDate: '', createdAt: now, updatedAt: now });
     const nextHistory = [value, ...history], nextRisks = calculateAllRisks(next, nextHistory, severities, settings);
-    setTms(next); setHistory(nextHistory); await saveReplacementAtomic(value, next, nextRisks); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
+    setTms(next); setHistory(nextHistory); await saveReplacementAtomic(value, next, nextRisks, disposedSerialNo); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
   };
   const updateSettings = async (value: RiskSettings, masters: SeverityMaster[]) => { setSettings(value); setSeverities(masters); const next = calculateAllRisks(tms, history, masters, value); await saveRemoteSettings(value, masters, next); await log('SETTINGS_UPDATE', 'settings', '', settings, value, '위험도 설정 변경 및 재계산'); };
   return <C.Provider value={{ tms, history, risks, severities, settings, issues, snapshots, saveSnapshot, loadSnapshot, removeSnapshot, setTmImport, setHistoryImport, resetAllData, addReplacement, updateSettings, log }}>{children}</C.Provider>;
