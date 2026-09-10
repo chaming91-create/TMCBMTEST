@@ -8,7 +8,7 @@ import { calculateAllRisks } from '../lib/riskCalculator';
 import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent } from '../lib/tmState';
 import { mergeHistoryImports, mergeTmImports } from '../lib/importMerge';
 import { validateData } from '../lib/validators';
-import { addAudit, backupDatabase, deleteDataSnapshot, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
+import { addAudit, backupDatabase, deleteDataSnapshot, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, restoreSpecificReplacement, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
 import { firebaseConfigured } from '../lib/firebase';
 import { parseReplacementHistorySheet, parseSeverityClassificationSheet, parseTMInstallationSheet, readWorkbookFromFile, toSeverityMap } from '../lib/excelParser';
 import defaultTmWorkbookUrl from '../../0. data1(TM 취부 현황) v2.xlsx?url';
@@ -102,6 +102,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const saveSnapshot = async (name:string) => { const snapshot:DataSnapshot={snapshotId:crypto.randomUUID(),name:name.trim(),createdAt:new Date().toISOString(),tmCount:tms.length,historyCount:history.length,tms,history,risks,severities,settings}; setSnapshots(current=>[snapshot,...current]); await saveDataSnapshot(snapshot); await log('SNAPSHOT_SAVE','data_snapshots','',null,{snapshotId:snapshot.snapshotId,name:snapshot.name},'데이터 시점 저장'); };
   const loadSnapshot = async (snapshot:DataSnapshot) => { await backupDatabase({tms,history,risks,severities,settings}); await restoreDatabase(snapshot); setTms(snapshot.tms);setHistory(snapshot.history);setSeverities(snapshot.severities);setSettings(snapshot.settings);await log('SNAPSHOT_LOAD','data_snapshots','',{tms:tms.length,history:history.length},{snapshotId:snapshot.snapshotId,name:snapshot.name},'저장 시점 불러오기'); };
   const removeSnapshot = async (snapshotId:string) => { setSnapshots(current=>current.filter(item=>item.snapshotId!==snapshotId)); await deleteDataSnapshot(snapshotId); };
+  const restoreOriginal111Replacement = async () => {
+    const removedSerialNo='98TWDH392', installedSerialNo='296640-10', replacementDate='2021-07-05';
+    const nextTms=tms.map(tm=>tm.serialNo===removedSerialNo?{...tm, currentTrain:'111', currentCar:'1', currentPosition:'1', currentUnit:'1', currentStatus:'운영중', isSpare:false, installDate:tm.installDate||'2026-08-12'}:tm.serialNo===installedSerialNo?{...tm, currentTrain:'예비품', currentCar:'예비품', currentPosition:'예비-001', currentUnit:'예비-001', currentStatus:'예비품', isSpare:true, installDate:''}:tm);
+    const nextHistory=history.filter(x=>!(x.replacementDate===replacementDate&&x.removedSerialNo===removedSerialNo&&x.installedSerialNo===installedSerialNo));
+    const nextRisks=calculateAllRisks(nextTms,nextHistory,severities,settings);
+    await restoreSpecificReplacement(removedSerialNo,installedSerialNo,replacementDate,nextTms,nextHistory,nextRisks);
+    setTms(nextTms); setHistory(nextHistory);
+  };
   const addReplacement = async (value: ReplacementHistory) => {
     const now = new Date().toISOString();
     let foundInstalled = false;
@@ -128,6 +136,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTms(next); setHistory(nextHistory); await saveReplacementAtomic(value, next, nextRisks, disposedSerialNo); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
   };
   const updateSettings = async (value: RiskSettings, masters: SeverityMaster[]) => { setSettings(value); setSeverities(masters); const next = calculateAllRisks(tms, history, masters, value); await saveRemoteSettings(value, masters, next); await log('SETTINGS_UPDATE', 'settings', '', settings, value, '위험도 설정 변경 및 재계산'); };
-  return <C.Provider value={{ tms, history, risks, severities, settings, issues, snapshots, saveSnapshot, loadSnapshot, removeSnapshot, setTmImport, setHistoryImport, resetAllData, addReplacement, updateSettings, log }}>{children}</C.Provider>;
+  return <C.Provider value={{ tms, history, risks, severities, settings, issues, snapshots, saveSnapshot, loadSnapshot, removeSnapshot, restoreOriginal111Replacement, setTmImport, setHistoryImport, resetAllData, addReplacement, updateSettings, log }}>{children}</C.Provider>;
 }
 export const useApp = () => { const value = useContext(C); if (!value) throw new Error('AppProvider가 필요합니다.'); return value; };
