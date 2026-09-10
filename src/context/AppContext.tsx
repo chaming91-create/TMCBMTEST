@@ -111,7 +111,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const updated = (() => {
       if (tm.serialNo === value.removedSerialNo) {
         if (!isReplacementNewerThanCurrent(tm, value.replacementDate)) return tm;
-        return { ...tm, currentStatus: value.removedStatus || '취거', isSpare: false, currentTrain: '', currentCar: '', currentPosition: '', locationSource: '웹앱 신규 입력' as const, inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added' as const, updatedAt: now };
+        const removedStatus = value.removedStatus === '불용' ? '불용' : (value.failureType || value.replacementReason === '고장' || value.replacementReason === '이상' ? '점검필요' : '예비품');
+        return { ...tm, currentStatus: removedStatus, isSpare: value.removedStatus !== '불용', currentTrain: '', currentCar: '', currentPosition: '', locationSource: '웹앱 신규 입력' as const, inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added' as const, updatedAt: now };
       }
       if (tm.serialNo === value.installedSerialNo) {
         foundInstalled = true;

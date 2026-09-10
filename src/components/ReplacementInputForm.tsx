@@ -84,6 +84,7 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
   const [disposal, setDisposal] = useState(false);
   const set = (key: FormKey, value: string) => setForm(current => ({ ...current, [key]: value }));
   const removedTm = useMemo(() => tms.find(tm => tm.serialNo === form.removedSerialNo), [tms, form.removedSerialNo]);
+  const hasSelection = Boolean(form.removedSerialNo || form.installedSerialNo);
 
   useEffect(() => {
     if (removedMode !== 'existing' || !removedTm) {
@@ -156,6 +157,12 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
       setSaving(false);
       onSaved();
     }}>
+      <div className="serial-grid">
+        <SerialChooser label="취거 TM Serial No." mode={removedMode} serial={form.removedSerialNo} tms={tms} onMode={mode => updateSerialMode('removed', mode)} onSerial={value => set('removedSerialNo', value)} />
+        {!disposal&&<SerialChooser label="취부 TM Serial No." mode={installedMode} serial={form.installedSerialNo} tms={tms} onMode={mode => updateSerialMode('installed', mode)} onSerial={value => set('installedSerialNo', value)} />}
+      </div>
+      <p className="auto-note">먼저 취거·취부 부품을 선택하세요. 선택 후 상세 입력란이 활성화됩니다.</p>
+      <fieldset disabled={!hasSelection} style={{border: 0, padding: 0, margin: 0, minWidth: 0}}>
       <label className="disposal-toggle"><input type="checkbox" checked={disposal} onChange={event=>{const checked=event.target.checked;setDisposal(checked);if(checked){setInstalledMode('existing');setForm(current=>({...current,installedSerialNo:'',installedStatus:'',removedStatus:'불용',replacementReason:current.replacementReason||'불용 처리'}));}}}/><span><b>불용 처리</b><small>선택한 취거품을 활성 TM 및 위험도 목록에서 삭제하고 이력만 보존합니다.</small></span></label>
       <div className="form-grid">
         <label>{disposal?'불용일자':'교체일자'}<b>*</b><input type="date" value={form.replacementDate} onChange={event => set('replacementDate', event.target.value)} /></label>
@@ -170,10 +177,6 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
         </>}
       </div>
       {autoLocation && <div className="auto-note">편성/호차/위치는 선택한 취거 시리얼의 현재 위치에서 자동 입력되었습니다.</div>}
-      <div className="serial-grid">
-        <SerialChooser label="취거 TM Serial No." mode={removedMode} serial={form.removedSerialNo} tms={tms} onMode={mode => updateSerialMode('removed', mode)} onSerial={value => set('removedSerialNo', value)} />
-        {!disposal&&<SerialChooser label="취부 TM Serial No." mode={installedMode} serial={form.installedSerialNo} tms={tms} onMode={mode => updateSerialMode('installed', mode)} onSerial={value => set('installedSerialNo', value)} />}
-      </div>
       <div className="form-grid">
         <label>취거품 상태<input disabled={disposal} value={disposal?'불용':form.removedStatus} onChange={event => set('removedStatus', event.target.value)} /></label>
         {!disposal&&<label>취부품 상태<input value={form.installedStatus} onChange={event => set('installedStatus', event.target.value)} /></label>}
@@ -183,6 +186,7 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
         <AutoField label="심각도 점수" value={form.severityScore} />
       </div>
       {([['detail', '세부 고장내용'], ['actionTaken', '조치내용'], ['note', '비고']] as const).map(([key, label]) => <label className="textarea-label" key={key}>{label}<textarea rows={3} value={form[key]} onChange={event => set(key, event.target.value)} /></label>)}
+      </fieldset>
       {error && <div className="form-error">{error}</div>}
       <div className="form-actions"><button type="button" onClick={() => { setForm(empty); setAutoLocation(false); setDisposal(false); }}>입력 초기화</button><button className="primary" disabled={saving}><Save />{saving ? '저장 중...' : disposal ? '불용 처리 저장' : '교체정보 저장'}</button></div>
     </form>
