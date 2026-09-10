@@ -6,7 +6,6 @@ import type { DataSnapshot } from '../types/snapshot';
 import { DEFAULT_SETTINGS, DEFAULT_SEVERITIES } from '../lib/defaults';
 import { calculateAllRisks } from '../lib/riskCalculator';
 import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent } from '../lib/tmState';
-import { mergeHistoryImports, mergeTmImports } from '../lib/importMerge';
 import { validateData } from '../lib/validators';
 import { addAudit, backupDatabase, deleteDataSnapshot, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
 import { firebaseConfigured } from '../lib/firebase';
@@ -85,18 +84,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
   const setTmImport = async (value: TmMaster[], note = '취부현황 엑셀 업로드') => {
     await backupDatabase({ tms, history, risks, severities, settings });
-    const merged = mergeTmImports(tms, value);
-    const enriched = enrichTmLocationsFromReplacementHistory(merged, history);
-    const nextRisks = calculateAllRisks(enriched, history, severities, settings);
-    setTms(enriched); await replaceTmData(enriched, nextRisks); await log('EXCEL_IMPORT_MERGE', 'tm_master', '', tms, enriched, note); return enriched.length;
+    const nextTms = value.map(tm => ({ ...tm, updatedAt: new Date().toISOString() }));
+    const nextRisks = calculateAllRisks(nextTms, history, severities, settings);
+    setTms(nextTms); await replaceTmData(nextTms, nextRisks); await log('EXCEL_IMPORT_REPLACE', 'tm_master', '', tms, nextTms, note); return nextTms.length;
   };
   const setHistoryImport = async (value: ReplacementHistory[], note = '교체현황 엑셀 업로드', severityOverride?: SeverityMaster[]) => {
     await backupDatabase({ tms, history, risks, severities, settings });
     const effectiveSeverities = severityOverride?.length ? severityOverride : severities;
     if (severityOverride?.length) setSeverities(severityOverride);
-    const now = new Date().toISOString(), mergedHistory = mergeHistoryImports(history, value);
-    const withHistoryOnly = applyHistoryImportToTmState(tms, mergedHistory, settings.referenceYear, now), nextTms = enrichTmLocationsFromReplacementHistory(withHistoryOnly, mergedHistory), nextRisks = calculateAllRisks(nextTms, mergedHistory, effectiveSeverities, settings);
-    setTms(nextTms); setHistory(mergedHistory); await replaceTmData(nextTms, nextRisks); await replaceHistoryData(mergedHistory, nextRisks); await log('EXCEL_IMPORT_MERGE', 'replacement_history', '', history, mergedHistory, note); return mergedHistory.length;
+    const now = new Date().toISOString(), nextHistory = [...value].sort((a,b)=>(b.replacementDate||'').localeCompare(a.replacementDate||''));
+    const withHistoryOnly = applyHistoryImportToTmState(tms, nextHistory, settings.referenceYear, now), nextTms = enrichTmLocationsFromReplacementHistory(withHistoryOnly, nextHistory), nextRisks = calculateAllRisks(nextTms, nextHistory, effectiveSeverities, settings);
+    setTms(nextTms); setHistory(nextHistory); await replaceTmData(nextTms, nextRisks); await replaceHistoryData(nextHistory, nextRisks); await log('EXCEL_IMPORT_REPLACE', 'replacement_history', '', history, nextHistory, note); return nextHistory.length;
   };
   const resetAllData = async () => { await backupDatabase({ tms, history, risks, severities, settings }); await resetDatabase(); setTms([]); setHistory([]); setSeverities(DEFAULT_SEVERITIES); setSettings(DEFAULT_SETTINGS); await log('DATABASE_RESET','all','',{tms:tms.length,history:history.length},{tms:0,history:0},'새 파일 업로드를 위한 전체 초기화'); };
   const saveSnapshot = async (name:string) => { const snapshot:DataSnapshot={snapshotId:crypto.randomUUID(),name:name.trim(),createdAt:new Date().toISOString(),tmCount:tms.length,historyCount:history.length,tms,history,risks,severities,settings}; setSnapshots(current=>[snapshot,...current]); await saveDataSnapshot(snapshot); await log('SNAPSHOT_SAVE','data_snapshots','',null,{snapshotId:snapshot.snapshotId,name:snapshot.name},'데이터 시점 저장'); };
