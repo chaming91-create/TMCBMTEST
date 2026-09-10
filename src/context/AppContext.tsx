@@ -8,7 +8,7 @@ import { calculateAllRisks } from '../lib/riskCalculator';
 import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent } from '../lib/tmState';
 import { validateData } from '../lib/validators';
 import { mergeHistoryImports, mergeTmImports, replaceTmImports, replaceHistoryImports } from '../lib/importMerge';
-import { addAudit, backupDatabase, deleteDataSnapshot, deleteReplacementHistory, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
+import { addAudit, backupDatabase, deleteDataSnapshot, deleteReplacementHistory, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection, readCollection } from '../lib/firestoreService';
 import { firebaseConfigured } from '../lib/firebase';
 import { parseReplacementHistorySheet, parseSeverityClassificationSheet, parseTMInstallationSheet, readWorkbookFromFile, toSeverityMap } from '../lib/excelParser';
 import defaultTmWorkbookUrl from '../../0. data1(TM 취부 현황) v2.xlsx?url';
@@ -30,36 +30,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const seedKey = 'ai_parts_default_workbooks_v2';
-    if (firebaseConfigured || tms.length || history.length || localStorage.getItem(seedKey)) return;
-    localStorage.setItem(seedKey, 'loading');
     void (async () => {
       try {
+        if (firebaseConfigured) {
+          const [remoteTms, remoteHistory] = await Promise.all([readCollection<TmMaster>('tm_master'), readCollection<ReplacementHistory>('replacement_history')]);
+          if (remoteTms.length || remoteHistory.length) return;
+        } else if (tms.length || history.length || localStorage.getItem(seedKey)) return;
         const loadWorkbook = async (url: string, name: string) => {
           const response = await fetch(url);
           if (!response.ok) throw new Error(`기본 현황파일을 불러오지 못했습니다: ${name}`);
           return readWorkbookFromFile(new File([await response.blob()], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
         };
-        const [tmWorkbook, historyWorkbook] = await Promise.all([
-          loadWorkbook(defaultTmWorkbookUrl, '기본 TM 취부현황.xlsx'),
-          loadWorkbook(defaultHistoryWorkbookUrl, '기본 TM 교체현황.xlsx'),
-        ]);
+        const [tmWorkbook, historyWorkbook] = await Promise.all([loadWorkbook(defaultTmWorkbookUrl, '기본 TM 취부현황.xlsx'), loadWorkbook(defaultHistoryWorkbookUrl, '기본 TM 교체현황.xlsx')]);
         const defaultSeverities = parseSeverityClassificationSheet(historyWorkbook);
         const importedTms = parseTMInstallationSheet(tmWorkbook, settings.referenceYear);
         const importedHistory = parseReplacementHistorySheet(historyWorkbook, toSeverityMap(defaultSeverities));
-        const mergedHistory = mergeHistoryImports([], importedHistory);
-        const withHistory = applyHistoryImportToTmState(mergeTmImports([], importedTms), mergedHistory, settings.referenceYear, new Date().toISOString());
-        const nextTms = enrichTmLocationsFromReplacementHistory(withHistory, mergedHistory);
-        setTms(nextTms);
-        setHistory(mergedHistory);
-        setSeverities(defaultSeverities.length ? defaultSeverities : DEFAULT_SEVERITIES);
+        const seededHistory = mergeHistoryImports([], importedHistory);
+        const seededTms = enrichTmLocationsFromReplacementHistory(applyHistoryImportToTmState(mergeTmImports([], importedTms), seededHistory, settings.referenceYear, new Date().toISOString()), seededHistory);
+        const seededSeverities = defaultSeverities.length ? defaultSeverities : DEFAULT_SEVERITIES;
+        const seededRisks = calculateAllRisks(seededTms, seededHistory, seededSeverities, settings);
+        setTms(seededTms); setHistory(seededHistory); setSeverities(seededSeverities);
+        if (firebaseConfigured) { await replaceTmData(seededTms, seededRisks); await replaceHistoryData(seededHistory, seededRisks); await saveRemoteSettings(settings, seededSeverities, seededRisks); }
         localStorage.setItem(seedKey, 'done');
-      } catch (error) {
-        localStorage.removeItem(seedKey);
-        console.error(error);
-      }
+      } catch (error) { localStorage.removeItem(seedKey); console.error(error); }
     })();
   }, []);
-
   useEffect(() => {
     if (!firebaseConfigured) return;
     const stops = [
