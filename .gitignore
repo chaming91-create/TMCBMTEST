@@ -7,10 +7,3 @@ vite.config.js
 vite.config.d.ts
 .firebase/
 firebase-debug.log
-
-.env.*
-!.env.example
-.firebaserc
-*-debug.log
-playwright-report/
-test-results/

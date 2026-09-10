@@ -10,42 +10,10 @@ const hasKnownValue = (value?: string) => !!value?.trim() && value.trim() !== UN
 const isUnknownStatus = (value?: string) => !value?.trim() || value.trim() === UNKNOWN;
 const isSpareLike = (value?: string) => ['예비품', '예비', 'spare'].some(token => (value || '').toLowerCase().includes(token.toLowerCase()));
 
-const NEEDS_INSPECTION_KEYWORDS = ['고장', '이상', '성능저하'];
-
-export function getRemovedSpareStatus(replacement: Pick<ReplacementHistory, 'replacementReason' | 'failureType' | 'removedStatus'> & Partial<Pick<ReplacementHistory, 'severityScore' | 'failureCode' | 'failureReplacement'>>): string {
-  if (replacement.removedStatus === '불용') return '불용';
-  const cause = `${replacement.replacementReason || ''} ${replacement.failureType || ''}`;
-  if (NEEDS_INSPECTION_KEYWORDS.some(keyword => cause.includes(keyword)) || ((replacement.severityScore ?? 0) > 0 && replacement.failureCode !== 'FC00') || replacement.failureReplacement === 'Y') {
-    const reason = NEEDS_INSPECTION_KEYWORDS.find(keyword => cause.includes(keyword)) || '고장';
-    return `예비품 · ⚠ ${reason} 취거 / 점검 필요`;
-  }
-  return '예비품';
-}
-
-export function applyManualReplacementToTmState(currentTms: TmMaster[], replacement: ReplacementHistory, now: string): TmMaster[] {
-  let foundInstalled = false;
-  const next: TmMaster[] = currentTms.map(tm => {
-    if (tm.serialNo === replacement.removedSerialNo) {
-      if (!isReplacementNewerThanCurrent(tm, replacement.replacementDate)) return tm;
-      const removalStatus = getRemovedSpareStatus(replacement);
-      const status = removalStatus === '예비품' && (tm.condition === 'inspection_required' || tm.condition === 'awaiting_repair') ? '예비품 · ⚠ 자체 이력 점검 필요' : removalStatus;
-      return { ...tm, currentStatus: status, condition: status === '불용' ? 'disposed' : status.includes('⚠') ? 'inspection_required' : (tm.condition || 'normal'), lastRemovalReason: replacement.replacementReason, lastRemovedAt: replacement.replacementDate, isSpare: status !== '불용', currentTrain: status === '불용' ? '' : '예비품', currentCar: '', currentUnit: '', currentPosition: '', stateChangedAt: replacement.replacementDate, locationSource: '웹앱 신규 입력', inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added', updatedAt: now };
-    }
-    if (tm.serialNo === replacement.installedSerialNo) {
-      foundInstalled = true;
-      if (!isReplacementNewerThanCurrent(tm, replacement.replacementDate)) return tm;
-      return { ...tm, currentStatus: tm.condition === 'inspection_required' || tm.condition === 'awaiting_repair' || tm.currentStatus.includes('⚠') ? '운행중 · ⚠ 자체 이력 점검 필요' : replacement.installedStatus || '운행중', stateChangedAt: replacement.replacementDate, isSpare: false, currentTrain: replacement.trainNo, currentCar: replacement.carNo, currentUnit: normalizeTmUnit(replacement.position), currentPosition: normalizeTmUnit(replacement.position), installDate: replacement.replacementDate, locationSource: '웹앱 신규 입력', inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added', updatedAt: now };
-    }
-    return tm;
-  });
-  if (replacement.installedSerialNo && !foundInstalled) next.push({ serialNo: replacement.installedSerialNo, manufacturer: replacement.installedManufacturer || '', manufactureYear: replacement.installedManufactureYear ?? null, ageYear: replacement.installedManufactureYear ? Math.max(0, new Date(now).getUTCFullYear() - replacement.installedManufactureYear) : 0, currentStatus: replacement.installedStatus || '운행중', stateChangedAt: replacement.replacementDate, isSpare: false, currentTrain: replacement.trainNo, currentCar: replacement.carNo, currentUnit: normalizeTmUnit(replacement.position), currentPosition: normalizeTmUnit(replacement.position), installDate: replacement.replacementDate, sourceType: 'manual_added', locationSource: '웹앱 신규 입력', inferredFromReplacement: false, inferredReplacementDate: '', createdAt: now, updatedAt: now });
-  return next;
-}
-
 export function isReplacementNewerThanCurrent(tm: TmMaster, replacementDate: string): boolean {
-  const stateDate=[tm.stateChangedAt,tm.confirmedAt,tm.installDate].filter(Boolean).sort().at(-1)||'';
+  const stateDate=tm.confirmedAt||tm.installDate;
   if (!replacementDate || !stateDate) return true;
-  return comparableDate(replacementDate) >= comparableDate(stateDate);
+  return tm.confirmedAt ? comparableDate(replacementDate) > comparableDate(stateDate) : comparableDate(replacementDate) >= comparableDate(stateDate);
 }
 
 function latest<T extends { date: string }>(a: T | undefined, b: T): T {
@@ -67,12 +35,30 @@ export function buildLatestInstalledReplacementIndex(replacementRows: Replacemen
 }
 
 export function keepLatestTmByCurrentLocation(rows: TmMaster[]): TmMaster[] {
-  const bySerial = new Map<string, TmMaster>();
-  rows.forEach(row => {
-    const current = bySerial.get(row.serialNo);
-    if (!current || comparableDate(row.confirmedAt || row.installDate) >= comparableDate(current.confirmedAt || current.installDate)) bySerial.set(row.serialNo, row);
+  const byTmId = new Map<string, TmMaster>();
+  const byLocation = new Map<string, TmMaster>();
+  const noLocation: TmMaster[] = [];
+
+  rows.forEach((row) => {
+    const tmId = row.tmId?.trim();
+    if (tmId) {
+      const existing = byTmId.get(tmId);
+      if (!existing || comparableDate(row.confirmedAt||row.installDate) >= comparableDate(existing.confirmedAt||existing.installDate)) byTmId.set(tmId, row);
+      return;
+    }
+
+    const hasLocation = hasKnownValue(row.currentTrain) && hasKnownValue(row.currentPosition) && !row.isSpare;
+    if (!hasLocation) {
+      noLocation.push(row);
+      return;
+    }
+
+    const key = [row.currentTrain, row.currentCar, row.currentPosition].map(value => value.trim()).join('|');
+    const existing = byLocation.get(key);
+    if (!existing || comparableDate(row.confirmedAt||row.installDate) >= comparableDate(existing.confirmedAt||existing.installDate)) byLocation.set(key, row);
   });
-  return [...bySerial.values()];
+
+  return [...byTmId.values(), ...noLocation, ...byLocation.values()];
 }
 
 export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[], replacementRows: ReplacementHistory[]): TmMaster[] {
@@ -102,7 +88,7 @@ export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[],
     };
 
     const event = latestEvent.get(tm.serialNo);
-    if (event && comparableDate(event.row.replacementDate) > comparableDate([next.stateChangedAt,next.confirmedAt,next.installDate].filter(Boolean).sort().at(-1)||'')) {
+    if (event && comparableDate(event.row.replacementDate) > comparableDate(next.confirmedAt||next.installDate)) {
       next.installDate = event.row.replacementDate;
       next.locationSource = "교체현황 최신 부착이력";
       next.inferredFromReplacement = true;
@@ -111,8 +97,8 @@ export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[],
         next.currentStatus = event.row.installedStatus || "운행중"; next.isSpare = false;
         next.currentTrain = event.row.trainNo; next.currentCar = normalizeCarNumber(event.row.trainNo,event.row.carNo); next.currentUnit = normalizeTmUnit(event.row.position); next.currentPosition = normalizeTmUnit(event.row.position);
       } else {
-        next.currentStatus = getRemovedSpareStatus(event.row); next.isSpare = next.currentStatus !== '불용';
-        next.currentTrain = next.isSpare ? "예비품" : ""; next.currentCar = ""; next.currentUnit = ""; next.currentPosition = "";
+        next.currentStatus = event.row.removedStatus || "취거"; next.isSpare = isSpareLike(next.currentStatus);
+        next.currentTrain = next.isSpare ? "예비품" : ""; next.currentCar = ""; next.currentUnit = ""; next.currentPosition = next.isSpare ? next.currentPosition : "";
       }
     }
 
@@ -204,9 +190,9 @@ export function applyHistoryImportToTmState(
   [...replacementRows].sort((a, b) => (a.replacementDate || '').localeCompare(b.replacementDate || '')).forEach(row => {
     const removed = ensureHistoryOnlyTm(row.removedSerialNo, row.removedManufacturer || '', row.removedManufactureYear ?? null);
     if (removed) {
-      removed.currentStatus = getRemovedSpareStatus(row);
-      removed.isSpare = removed.currentStatus !== '불용';
-      removed.currentTrain = removed.isSpare ? '예비품' : '';
+      removed.currentStatus = row.removedStatus || '취거';
+      removed.isSpare = false;
+      removed.currentTrain = '';
       removed.currentCar = '';
       removed.currentPosition = '';
       removed.updatedAt = now;

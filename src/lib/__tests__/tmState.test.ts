@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ReplacementHistory } from '../../types/replacement';
 import type { TmMaster } from '../../types/tm';
-import { applyHistoryImportToTmState, applyManualReplacementToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent, keepLatestTmByCurrentLocation } from '../tmState';
+import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent, keepLatestTmByCurrentLocation } from '../tmState';
 
 const tm = (overrides: Partial<TmMaster>): TmMaster => ({
   serialNo: 'TM-1',
@@ -74,7 +74,7 @@ describe('applyHistoryImportToTmState', () => {
   });
 
 
-  it('preserves different physical parts even when workbook locations collide', () => {
+  it('keeps only the latest current Excel row for the same mounted location', () => {
     const rows = keepLatestTmByCurrentLocation([
       tm({ serialNo: 'OLD', currentTrain: '101', currentCar: '1', currentPosition: 'M01', installDate: '2025-01-01' }),
       tm({ serialNo: 'NEW', currentTrain: '101', currentCar: '1', currentPosition: 'M01', installDate: '2026-02-03' }),
@@ -83,7 +83,7 @@ describe('applyHistoryImportToTmState', () => {
       tm({ serialNo: 'UNKNOWN-2', currentTrain: '모름', currentPosition: '모름', installDate: '2026-01-01' }),
     ]);
 
-    expect(rows.map(row => row.serialNo)).toEqual(['OLD', 'NEW', 'SPARE', 'UNKNOWN-1', 'UNKNOWN-2']);
+    expect(rows.map(row => row.serialNo)).toEqual(['SPARE', 'UNKNOWN-1', 'UNKNOWN-2', 'NEW']);
   });
 
   it('treats manual replacement as current-state input only when it is not older than the current install date', () => {
@@ -138,45 +138,5 @@ describe('latest-date current state reconciliation', () => {
       [replacement({ installedSerialNo: 'TM-1', trainNo: '202', position: 'M08', replacementDate: '2025-02-03' })],
     )[0];
     expect(next).toMatchObject({ currentTrain: '101', currentPosition: 'M01', installDate: '2026-05-01', locationDateMismatch: false });
-  });
-});
-
-
-describe('manual replacement identity and state', () => {
-  it('failure replacement moves A to warned spare and mounts B without A failure state', () => {
-    const event = replacement({ replacementDate:'2026-09-10', trainNo:'777', carNo:'2', position:'M04', removedSerialNo:'A', installedSerialNo:'B', replacementReason:'고장', failureType:'베어링 고장', severityScore:80 });
-    const next = applyManualReplacementToTmState([
-      tm({ serialNo:'A', tmId:'ID-A' }),
-      tm({ serialNo:'B', tmId:'ID-B', currentStatus:'예비품', isSpare:true, currentTrain:'예비품', currentPosition:'' }),
-    ], event, '2026-09-10T00:00:00.000Z');
-
-    expect(next).toHaveLength(2);
-    expect(next.find(x=>x.serialNo==='A')).toMatchObject({tmId:'ID-A',isSpare:true,currentTrain:'예비품',currentCar:'',currentPosition:'',currentStatus:'예비품 · ⚠ 고장 취거 / 점검 필요'});
-    expect(next.find(x=>x.serialNo==='B')).toMatchObject({tmId:'ID-B',isSpare:false,currentTrain:'777',currentCar:'2',currentPosition:'4',currentStatus:'운행중'});
-    expect(next.find(x=>x.serialNo==='B')?.currentStatus).not.toContain('고장');
-  });
-
-  it('preventive replacement returns A to a normal spare without a failure warning', () => {
-    const next = applyManualReplacementToTmState([
-      tm({serialNo:'A'}),
-      tm({serialNo:'B',currentStatus:'예비품',isSpare:true,currentTrain:'예비품'}),
-    ], replacement({replacementDate:'2026-09-10',removedSerialNo:'A',installedSerialNo:'B',replacementReason:'예방교체',failureType:'',severityScore:null}), '2026-09-10T00:00:00.000Z');
-
-    expect(next.find(x=>x.serialNo==='A')).toMatchObject({currentStatus:'예비품',isSpare:true,currentTrain:'예비품'});
-    expect(next.find(x=>x.serialNo==='B')).toMatchObject({currentStatus:'운행중',isSpare:false});
-  });
-
-  it('keeps A, B, and C independent through consecutive replacements', () => {
-    const first = applyManualReplacementToTmState([
-      tm({serialNo:'A'}),
-      tm({serialNo:'B',currentStatus:'예비품',isSpare:true,currentTrain:'예비품'}),
-      tm({serialNo:'C',currentStatus:'예비품',isSpare:true,currentTrain:'예비품'}),
-    ], replacement({replacementId:'R1',replacementDate:'2026-09-10',removedSerialNo:'A',installedSerialNo:'B',replacementReason:'고장'}), '2026-09-10T00:00:00.000Z');
-    const second = applyManualReplacementToTmState(first, replacement({replacementId:'R2',replacementDate:'2026-10-10',removedSerialNo:'B',installedSerialNo:'C',replacementReason:'예방교체'}), '2026-10-10T00:00:00.000Z');
-
-    expect(second.map(x=>x.serialNo).sort()).toEqual(['A','B','C']);
-    expect(second.find(x=>x.serialNo==='A')).toMatchObject({isSpare:true,currentStatus:'예비품 · ⚠ 고장 취거 / 점검 필요'});
-    expect(second.find(x=>x.serialNo==='B')).toMatchObject({isSpare:true,currentStatus:'예비품'});
-    expect(second.find(x=>x.serialNo==='C')).toMatchObject({isSpare:false,currentTrain:'999',currentPosition:'9'});
   });
 });

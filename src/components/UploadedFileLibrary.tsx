@@ -12,7 +12,7 @@ export default function UploadedFileLibrary() {
   const [error, setError] = useState('');
   useEffect(() => {
     if (!firebaseConfigured) return;
-    return subscribeCollection<UploadedFile>('uploaded_files', items => setFiles(items.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))), error=>{console.error(error);setError('공용 업로드 자료를 조회하지 못했습니다. 연결과 권한을 확인하세요.');});
+    return subscribeCollection<UploadedFile>('uploaded_files', items => setFiles(items.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))));
   }, []);
   const download = async (file: UploadedFile) => {
     setOpening(file.fileId); setError('');

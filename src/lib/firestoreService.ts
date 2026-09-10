@@ -1,60 +1,72 @@
-import { collection, doc, getDocFromServer, getDocsFromServer, onSnapshot, runTransaction, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, onSnapshot, runTransaction, setDoc, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { storage } from './firebase';
-import { requireAdmin, requireDatabase } from './sharedStore';
+import { db, storage } from './firebase';
 import type { TmMaster, SeverityMaster } from '../types/tm';
 import type { ReplacementHistory } from '../types/replacement';
 import type { RiskScore, RiskSettings, AuditLog } from '../types/risk';
 import type { DataSnapshot } from '../types/snapshot';
 import type { UploadedFile } from '../types/uploadedFile';
+
 export type AppData = { tms: TmMaster[]; history: ReplacementHistory[]; risks: RiskScore[]; severities: SeverityMaster[]; settings: RiskSettings };
 
-// Split backup payloads below Firestore's 1 MiB document limit. A manifest is
-// published only after every chunk succeeds; interrupted backups cannot be loaded.
-async function writeArchive(name: string, id: string, data: AppData, metadata: object) {
-  const database = requireDatabase(), payload = JSON.stringify(data), chunks = payload.match(/[\s\S]{1,150000}/gu) || [];
-  for (let i = 0; i < chunks.length; i += 100) {
+const clearCollection = async (name: string) => {
+  const database = db;
+  if (!database) return;
+  const snapshot = await getDocs(collection(database, name));
+  for (let i = 0; i < snapshot.docs.length; i += 400) {
     const batch = writeBatch(database);
-    chunks.slice(i, i + 100).forEach((payload, offset) => batch.set(doc(database, name, id, 'chunks', String(i + offset).padStart(6, '0')), { payload }));
+    snapshot.docs.slice(i, i + 400).forEach(item => batch.delete(item.ref));
     await batch.commit();
   }
-  await runTransaction(database, async tx => { tx.set(doc(database, name, id), { ...metadata, formatVersion: 2, chunkCount: chunks.length, complete: true }); });
-}
-export async function backupDatabase(data: AppData) { const id = crypto.randomUUID(); await writeArchive('backups', id, data, { createdAt: new Date().toISOString() }); return id; }
-export async function saveDataSnapshot(snapshot: DataSnapshot) {
-  const { snapshotId, name, createdAt, tmCount, historyCount } = snapshot;
-  await writeArchive('data_snapshots', snapshotId, snapshot, { snapshotId, name, createdAt, tmCount, historyCount });
-}
-export async function readDataSnapshot(snapshotId: string): Promise<AppData> {
-  await requireAdmin();
-  const database = requireDatabase(), header = await getDocFromServer(doc(database, 'data_snapshots', snapshotId));
-  if (!header.exists()) throw new Error('백업이 존재하지 않습니다.');
-  const value = header.data();
-  if (value.formatVersion !== 2) return value as AppData; // Existing inline backups are preserved.
-  const chunks = await getDocsFromServer(collection(database, 'data_snapshots', snapshotId, 'chunks'));
-  if (!value.complete || chunks.size !== value.chunkCount) throw new Error('백업이 불완전합니다. 운영자료는 변경되지 않았습니다.');
-  return JSON.parse(chunks.docs.sort((a,b) => a.id.localeCompare(b.id)).map(x => x.data().payload).join('')) as AppData;
-}
-export async function deleteDataSnapshot(snapshotId: string) {
-  await requireAdmin();
-  const database = requireDatabase();
-  // Retain chunks for recovery; deleting the manifest removes this archive from the UI.
-  await runTransaction(database, async tx => { tx.delete(doc(database, 'data_snapshots', snapshotId)); });
-}
-export async function addAudit(log: AuditLog) { const database = requireDatabase(); await runTransaction(database, async tx => { tx.set(doc(database, 'audit_log', log.logId), log); }); }
+};
+
+const putMany = async (name: string, items: object[], id: (value: any) => string) => {
+  const database = db;
+  if (!database) return;
+  for (let i = 0; i < items.length; i += 400) {
+    const batch = writeBatch(database);
+    items.slice(i, i + 400).forEach((value) => batch.set(doc(database, name, id(value)), value));
+    await batch.commit();
+  }
+};
+export async function backupDatabase(data: AppData) { if (db) await setDoc(doc(db, 'backups', `${Date.now()}`), { ...data, createdAt: new Date().toISOString() }); }
+export async function replaceTmData(data: TmMaster[], risks: RiskScore[]) { await clearCollection('tm_master'); await putMany('tm_master', data, v => v.serialNo); await putMany('risk_score', risks, v => v.serialNo); }
+export async function replaceHistoryData(data: ReplacementHistory[], risks: RiskScore[]) { await clearCollection('replacement_history'); await putMany('replacement_history', data, v => v.replacementId); await putMany('risk_score', risks, v => v.serialNo); }
+export async function resetDatabase() { await Promise.all(['tm_master','replacement_history','risk_score','severity_master'].map(clearCollection)); if (db) await clearCollection('settings'); }
+export async function saveDataSnapshot(snapshot: DataSnapshot) { if (db) await setDoc(doc(db,'data_snapshots',snapshot.snapshotId),snapshot); }
+export async function deleteDataSnapshot(snapshotId:string) { if (db) await deleteDoc(doc(db,'data_snapshots',snapshotId)); }
+export async function restoreDatabase(data:AppData) { await resetDatabase(); await replaceTmData(data.tms,data.risks); await replaceHistoryData(data.history,data.risks); await saveSettings(data.settings,data.severities,data.risks); }
+export async function saveSettings(settings: RiskSettings, severities: SeverityMaster[], risks: RiskScore[]) { if (!db) return; await setDoc(doc(db, 'settings', 'risk'), settings); await putMany('severity_master', severities, v => v.failureType); await putMany('risk_score', risks, v => v.serialNo); }
+export async function addAudit(log: AuditLog) { if (db) await setDoc(doc(db, 'audit_log', log.logId), log); }
 export async function uploadOriginal(file: File, type: UploadedFile['type'], uploadedBy = '') {
-  const database = requireDatabase();
-  if (!storage) throw new Error('원본 파일 저장소가 연결되지 않았습니다.');
-  const fileId = crypto.randomUUID(), safeName = file.name.replace(/[\\/#?%]/g, '_'), storagePath = `excel-original/${fileId}_${safeName}`;
+  if (!storage || !db) return null;
+  const fileId = crypto.randomUUID();
+  const safeName = file.name.replace(/[\\/#?%]/g, '_');
+  const storagePath = `excel-original/${fileId}_${safeName}`;
   await uploadBytes(ref(storage, storagePath), file, { contentType: file.type || 'application/octet-stream' });
   const metadata: UploadedFile = { fileId, name: file.name, storagePath, type, size: file.size, contentType: file.type || 'application/octet-stream', uploadedAt: new Date().toISOString(), uploadedBy };
-  await runTransaction(database, async tx => { tx.set(doc(database, 'uploaded_files', fileId), metadata); });
+  await setDoc(doc(db, 'uploaded_files', fileId), metadata);
   return metadata;
 }
-export async function getUploadedFileUrl(storagePath: string) { if (!storage) throw new Error('파일 저장소가 연결되지 않았습니다.'); return getDownloadURL(ref(storage, storagePath)); }
-export function subscribeCollection<T>(name: string, cb: (items: T[]) => void, error: (e: unknown) => void = console.error) {
-  return onSnapshot(collection(requireDatabase(), name), { includeMetadataChanges: true }, snap => {
-    if (!snap.metadata.hasPendingWrites && !snap.metadata.fromCache) cb(snap.docs.map(d => d.data() as T));
-  }, error);
+export async function getUploadedFileUrl(storagePath: string) {
+  if (!storage) throw new Error('파일 저장소가 연결되지 않았습니다.');
+  return getDownloadURL(ref(storage, storagePath));
 }
-export async function readCollection<T>(name: string) { return (await getDocsFromServer(collection(requireDatabase(), name))).docs.map(d => d.data() as T); }
+export async function saveReplacementAtomic(item: ReplacementHistory, tms: TmMaster[], risks: RiskScore[], disposedSerialNo = '') {
+  const database = db;
+  if (!database) return;
+  await runTransaction(database, async tx => {
+    tx.set(doc(database, 'replacement_history', item.replacementId), item);
+    if (disposedSerialNo) {
+      tx.delete(doc(database, 'tm_master', disposedSerialNo));
+      tx.delete(doc(database, 'risk_score', disposedSerialNo));
+    }
+    const removed = tms.find(t => t.serialNo === item.removedSerialNo);
+    const installed = tms.find(t => t.serialNo === item.installedSerialNo);
+    if (removed) tx.set(doc(database, 'tm_master', removed.serialNo), removed);
+    if (installed) tx.set(doc(database, 'tm_master', installed.serialNo), installed);
+    risks.forEach(r => tx.set(doc(database, 'risk_score', r.serialNo), r));
+  });
+}
+export function subscribeCollection<T>(name: string, cb: (items: T[]) => void) { if (!db) return () => {}; return onSnapshot(collection(db, name), snap => cb(snap.docs.map(d => d.data() as T))); }
+export async function readCollection<T>(name: string) { if (!db) return []; return (await getDocs(collection(db, name))).docs.map(d => d.data() as T); }
