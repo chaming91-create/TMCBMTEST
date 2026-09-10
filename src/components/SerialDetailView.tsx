@@ -20,7 +20,7 @@ export default function SerialDetailView(){
       const installed=x.installedSerialNo===serial;
       const basis=installed&&tm.inferredFromReplacement&&tm.inferredReplacementDate===x.replacementDate;
       const kind=basis?'위치보완 기준이력':installed?'부착':isFailureEvent(x)?'고장발생':x.failureType?'취거':'정기교체';
-      rows.push({id:x.replacementId+(installed?'-in':'-out'),date:x.replacementDate,kind,title:`${x.trainNo||'-'}편성 ${x.carNo||'-'}호차 ${x.position||'-'}`,body:[x.failureType,x.replacementReason,x.detail].filter(Boolean).join(' · ')||'교체 이력',source:x.inputSource==='manual'?'웹앱 신규 입력':'교체현황'});
+      rows.push({id:x.replacementId+(installed?'-in':'-out'),date:x.replacementDate,kind,title:`${x.trainNo||'-'}편성 ${x.carNo||'-'}호차 ${x.position||'-'}`,body:installed?`${x.removedSerialNo||'기존 TM'} 취거에 따라 대체 취부`:[x.failureType,x.replacementReason,x.detail].filter(Boolean).join(' · ')||'교체 이력',source:x.inputSource==='manual'?'웹앱 신규 입력':'교체현황'});
     });
     return rows.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   },[events,serial,tm]);
