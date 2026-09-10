@@ -8,7 +8,7 @@ import { calculateAllRisks } from '../lib/riskCalculator';
 import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent } from '../lib/tmState';
 import { validateData } from '../lib/validators';
 import { mergeHistoryImports, mergeTmImports, replaceTmImports, replaceHistoryImports } from '../lib/importMerge';
-import { addAudit, backupDatabase, deleteDataSnapshot, deleteReplacementHistory, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection, readCollection } from '../lib/firestoreService';
+import { addAudit, backupDatabase, deleteDataSnapshot, deleteReplacementHistory, rollbackReplacementAtomic, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection, readCollection } from '../lib/firestoreService';
 import { firebaseConfigured } from '../lib/firebase';
 import { parseReplacementHistorySheet, parseSeverityClassificationSheet, parseTMInstallationSheet, readWorkbookFromFile, toSeverityMap } from '../lib/excelParser';
 import defaultTmWorkbookUrl from '../../0. data1(TM 취부 현황) v2.xlsx?url';
@@ -96,7 +96,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const saveSnapshot = async (name:string) => { const snapshot:DataSnapshot={snapshotId:crypto.randomUUID(),name:name.trim(),createdAt:new Date().toISOString(),tmCount:tms.length,historyCount:history.length,tms,history,risks,severities,settings}; setSnapshots(current=>[snapshot,...current]); await saveDataSnapshot(snapshot); await log('SNAPSHOT_SAVE','data_snapshots','',null,{snapshotId:snapshot.snapshotId,name:snapshot.name},'데이터 시점 저장'); };
   const loadSnapshot = async (snapshot:DataSnapshot) => { await backupDatabase({tms,history,risks,severities,settings}); await restoreDatabase(snapshot); setTms(snapshot.tms);setHistory(snapshot.history);setSeverities(snapshot.severities);setSettings(snapshot.settings);await log('SNAPSHOT_LOAD','data_snapshots','',{tms:tms.length,history:history.length},{snapshotId:snapshot.snapshotId,name:snapshot.name},'저장 시점 불러오기'); };
   const removeSnapshot = async (snapshotId:string) => { setSnapshots(current=>current.filter(item=>item.snapshotId!==snapshotId)); await deleteDataSnapshot(snapshotId); };
-  const deleteReplacement = async (replacementId:string) => { const nextHistory=history.filter(item=>item.replacementId!==replacementId); const nextRisks=calculateAllRisks(tms,nextHistory,severities,settings); await deleteReplacementHistory(replacementId,nextRisks); setHistory(nextHistory); };
+  const deleteReplacement = async (replacementId:string) => {
+    const target = history.find(item => item.replacementId === replacementId);
+    if (!target) return;
+    const nextHistory = history.filter(item => item.replacementId !== replacementId);
+    let nextTms = tms;
+    const snapshot = target.inputSource === 'manual' ? target.rollbackSnapshot : undefined;
+    if (snapshot) {
+      nextTms = tms.map(tm => {
+        const restore = tm.serialNo === target.removedSerialNo ? snapshot.removed : tm.serialNo === target.installedSerialNo ? snapshot.installed : undefined;
+        if (!restore) return tm;
+        if (!restore.exists) return tm;
+        return { ...tm, currentTrain: restore.currentTrain, currentCar: restore.currentCar, currentPosition: restore.currentPosition, currentUnit: restore.currentUnit, currentStatus: restore.currentStatus, isSpare: restore.isSpare, installDate: restore.installDate, updatedAt: new Date().toISOString() };
+      });
+      nextTms = snapshot.installed && snapshot.installed.exists === false ? nextTms.filter(tm => tm.serialNo !== target.installedSerialNo) : nextTms;
+    }
+    const nextRisks = calculateAllRisks(nextTms, nextHistory, severities, settings);
+    if (snapshot) await rollbackReplacementAtomic(replacementId, nextTms, nextRisks);
+    else await deleteReplacementHistory(replacementId, nextRisks);
+    setTms(nextTms); setHistory(nextHistory);
+  };
   const addReplacement = async (value: ReplacementHistory) => {
     const now = new Date().toISOString();
     let foundInstalled = false;
@@ -125,8 +144,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (value.installedSerialNo && !foundInstalled) next.push({ serialNo: value.installedSerialNo, manufacturer: '', manufactureYear: null, ageYear: 0, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, sourceType: 'manual_added', locationSource: '웹앱 신규 입력', inferredFromReplacement: false, inferredReplacementDate: '', createdAt: now, updatedAt: now });
     const occupied = new Map<string, string>();
     next.filter(tm => !tm.isSpare && tm.sourceType !== 'history_only' && tm.currentTrain && tm.currentPosition).forEach(tm => { const key = `${tm.currentTrain}|${tm.currentCar}|${tm.currentPosition}`; if (occupied.has(key) && occupied.get(key) !== tm.serialNo) throw new Error(`취부 위치가 중복됩니다: ${key}`); occupied.set(key, tm.serialNo); });
-    const nextHistory = [value, ...history], nextRisks = calculateAllRisks(next, nextHistory, severities, settings);
-    setTms(next); setHistory(nextHistory); await saveReplacementAtomic(value, next, nextRisks, disposedSerialNo); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
+    const snapshot = {
+      removed: removedBefore ? { exists: true, currentTrain: removedBefore.currentTrain, currentCar: removedBefore.currentCar, currentPosition: removedBefore.currentPosition, currentUnit: removedBefore.currentUnit, currentStatus: removedBefore.currentStatus, isSpare: removedBefore.isSpare, installDate: removedBefore.installDate } : { exists: false, currentTrain: '', currentCar: '', currentPosition: '', currentStatus: '', isSpare: false, installDate: '' },
+      installed: installedBefore ? { exists: true, currentTrain: installedBefore.currentTrain, currentCar: installedBefore.currentCar, currentPosition: installedBefore.currentPosition, currentUnit: installedBefore.currentUnit, currentStatus: installedBefore.currentStatus, isSpare: installedBefore.isSpare, installDate: installedBefore.installDate } : { exists: false, currentTrain: '', currentCar: '', currentPosition: '', currentStatus: '', isSpare: false, installDate: '' },
+    };
+    const savedValue = { ...value, ...(value.installedSerialNo ? { rollbackSnapshot: snapshot } : {}) };
+    const nextHistory = [savedValue, ...history], nextRisks = calculateAllRisks(next, nextHistory, severities, settings);
+    setTms(next); setHistory(nextHistory); await saveReplacementAtomic(savedValue, next, nextRisks, disposedSerialNo); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
   };
   const updateSettings = async (value: RiskSettings, masters: SeverityMaster[]) => { setSettings(value); setSeverities(masters); const next = calculateAllRisks(tms, history, masters, value); await saveRemoteSettings(value, masters, next); await log('SETTINGS_UPDATE', 'settings', '', settings, value, '위험도 설정 변경 및 재계산'); };
   return <C.Provider value={{ tms, history, risks, severities, settings, issues, snapshots, saveSnapshot, loadSnapshot, removeSnapshot, deleteReplacement, setTmImport, setHistoryImport, resetAllData, addReplacement, updateSettings, log }}>{children}</C.Provider>;

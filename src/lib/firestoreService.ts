@@ -52,6 +52,15 @@ export async function getUploadedFileUrl(storagePath: string) {
   if (!storage) throw new Error('파일 저장소가 연결되지 않았습니다.');
   return getDownloadURL(ref(storage, storagePath));
 }
+export async function rollbackReplacementAtomic(replacementId: string, tms: TmMaster[], risks: RiskScore[]) {
+  const database = db;
+  if (!database) return;
+  await runTransaction(database, async tx => {
+    tx.delete(doc(database, 'replacement_history', replacementId));
+    tms.forEach(tm => tx.set(doc(database, 'tm_master', tm.serialNo), tm));
+    risks.forEach(r => tx.set(doc(database, 'risk_score', r.serialNo), r));
+  });
+}
 export async function deleteReplacementHistory(replacementId: string, risks: RiskScore[]) {
   const database = db;
   if (!database) return;
