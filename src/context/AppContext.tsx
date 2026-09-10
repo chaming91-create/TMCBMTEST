@@ -105,6 +105,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addReplacement = async (value: ReplacementHistory) => {
     const now = new Date().toISOString();
     let foundInstalled = false;
+    const removedBefore = tms.find(tm => tm.serialNo === value.removedSerialNo);
+    const installedBefore = tms.find(tm => tm.serialNo === value.installedSerialNo);
+    const removedLocation = { train: removedBefore?.currentTrain || value.trainNo, car: removedBefore?.currentCar || value.carNo, position: removedBefore?.currentPosition || value.position, unit: removedBefore?.currentUnit || removedBefore?.currentPosition || value.position };
+    const installedLocation = { train: installedBefore?.currentTrain || '예비품', car: installedBefore?.currentCar || '예비품', position: installedBefore?.currentPosition || '예비-001', unit: installedBefore?.currentUnit || installedBefore?.currentPosition || '예비-001' };
     const disposedSerialNo = value.removedStatus === '불용' ? value.removedSerialNo : '';
     const next = tms.flatMap(tm => {
       if (disposedSerialNo && tm.serialNo === disposedSerialNo) return [];
@@ -112,18 +116,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (tm.serialNo === value.removedSerialNo) {
         if (!isReplacementNewerThanCurrent(tm, value.replacementDate)) return tm;
         const removedStatus = value.removedStatus === '불용' ? '불용' : (value.failureType || value.replacementReason === '고장' || value.replacementReason === '이상' ? '점검필요' : '예비품');
-        return { ...tm, currentStatus: removedStatus, isSpare: value.removedStatus !== '불용', currentTrain: '', currentCar: '', currentPosition: '', locationSource: '웹앱 신규 입력' as const, inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added' as const, updatedAt: now };
+        return { ...tm, currentStatus: removedStatus, isSpare: value.removedStatus !== '불용', currentTrain: installedLocation.train, currentCar: installedLocation.car, currentPosition: installedLocation.position, currentUnit: installedLocation.unit, locationSource: '웹앱 신규 입력' as const, inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added' as const, updatedAt: now };
       }
       if (tm.serialNo === value.installedSerialNo) {
         foundInstalled = true;
         if (!isReplacementNewerThanCurrent(tm, value.replacementDate)) return tm;
-        return { ...tm, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, locationSource: '웹앱 신규 입력' as const, inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added' as const, updatedAt: now };
+        return { ...tm, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: removedLocation.train, currentCar: removedLocation.car, currentPosition: removedLocation.position, currentUnit: removedLocation.unit, installDate: value.replacementDate, locationSource: '웹앱 신규 입력' as const, inferredFromReplacement: false, inferredReplacementDate: '', sourceType: 'manual_added' as const, updatedAt: now };
       }
       return tm;
       })();
       return [updated];
     });
     if (value.installedSerialNo && !foundInstalled) next.push({ serialNo: value.installedSerialNo, manufacturer: '', manufactureYear: null, ageYear: 0, currentStatus: value.installedStatus || '운행중', isSpare: false, currentTrain: value.trainNo, currentCar: value.carNo, currentPosition: value.position, installDate: value.replacementDate, sourceType: 'manual_added', locationSource: '웹앱 신규 입력', inferredFromReplacement: false, inferredReplacementDate: '', createdAt: now, updatedAt: now });
+    const occupied = new Map<string, string>();
+    next.filter(tm => !tm.isSpare && tm.sourceType !== 'history_only' && tm.currentTrain && tm.currentPosition).forEach(tm => { const key = `${tm.currentTrain}|${tm.currentCar}|${tm.currentPosition}`; if (occupied.has(key) && occupied.get(key) !== tm.serialNo) throw new Error(`취부 위치가 중복됩니다: ${key}`); occupied.set(key, tm.serialNo); });
     const nextHistory = [value, ...history], nextRisks = calculateAllRisks(next, nextHistory, severities, settings);
     setTms(next); setHistory(nextHistory); await saveReplacementAtomic(value, next, nextRisks, disposedSerialNo); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
   };
