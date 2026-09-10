@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS, DEFAULT_SEVERITIES } from '../lib/defaults';
 import { calculateAllRisks } from '../lib/riskCalculator';
 import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent } from '../lib/tmState';
 import { validateData } from '../lib/validators';
-import { mergeHistoryImports, mergeTmImports } from '../lib/importMerge';
+import { mergeHistoryImports, mergeTmImports, replaceTmImports, replaceHistoryImports } from '../lib/importMerge';
 import { addAudit, backupDatabase, deleteDataSnapshot, deleteReplacementHistory, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
 import { firebaseConfigured } from '../lib/firebase';
 import { parseReplacementHistorySheet, parseSeverityClassificationSheet, parseTMInstallationSheet, readWorkbookFromFile, toSeverityMap } from '../lib/excelParser';
@@ -85,7 +85,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
   const setTmImport = async (value: TmMaster[], note = '취부현황 엑셀 업로드') => {
     await backupDatabase({ tms, history, risks, severities, settings });
-    const nextTms = value.map(tm => ({ ...tm, updatedAt: new Date().toISOString() }));
+    const nextTms = replaceTmImports(value).map(tm => ({ ...tm, updatedAt: new Date().toISOString() }));
     const nextRisks = calculateAllRisks(nextTms, history, severities, settings);
     setTms(nextTms); await replaceTmData(nextTms, nextRisks); await log('EXCEL_IMPORT_REPLACE', 'tm_master', '', tms, nextTms, note); return nextTms.length;
   };
@@ -93,7 +93,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await backupDatabase({ tms, history, risks, severities, settings });
     const effectiveSeverities = severityOverride?.length ? severityOverride : severities;
     if (severityOverride?.length) setSeverities(severityOverride);
-    const now = new Date().toISOString(), nextHistory = [...value].sort((a,b)=>(b.replacementDate||'').localeCompare(a.replacementDate||''));
+    const now = new Date().toISOString(), nextHistory = replaceHistoryImports(value);
     const withHistoryOnly = applyHistoryImportToTmState(tms, nextHistory, settings.referenceYear, now), nextTms = enrichTmLocationsFromReplacementHistory(withHistoryOnly, nextHistory), nextRisks = calculateAllRisks(nextTms, nextHistory, effectiveSeverities, settings);
     setTms(nextTms); setHistory(nextHistory); await replaceTmData(nextTms, nextRisks); await replaceHistoryData(nextHistory, nextRisks); await log('EXCEL_IMPORT_REPLACE', 'replacement_history', '', history, nextHistory, note); return nextHistory.length;
   };

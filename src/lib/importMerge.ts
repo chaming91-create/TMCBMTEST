@@ -16,3 +16,7 @@ export function mergeHistoryImports(current: ReplacementHistory[], incoming: Rep
   incoming.forEach(row => merged.set(historyKey(row), row));
   return [...merged.values()].sort((a,b)=>(b.replacementDate||'').localeCompare(a.replacementDate||''));
 }
+
+/** 최신 업로드 파일을 현재 기준으로 사용하며 기존 행은 포함하지 않는다. */
+export function replaceTmImports(incoming: TmMaster[]) { return [...incoming]; }
+export function replaceHistoryImports(incoming: ReplacementHistory[]) { return [...incoming].sort((a,b)=>(b.replacementDate||'').localeCompare(a.replacementDate||'')); }
