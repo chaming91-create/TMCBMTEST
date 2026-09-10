@@ -1,5 +1,5 @@
-import { cpSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, mkdirSync } from 'node:fs';
 
-rmSync('assets', { recursive: true, force: true });
+// Keep existing workbook assets and user files; only replace matching build outputs.
 mkdirSync('assets', { recursive: true });
 cpSync('dist/assets', 'assets', { recursive: true });
