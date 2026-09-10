@@ -53,15 +53,16 @@ export async function getUploadedFileUrl(storagePath: string) {
   return getDownloadURL(ref(storage, storagePath));
 }
 export async function restoreSpecificReplacement(removedSerialNo: string, installedSerialNo: string, replacementDate: string, tms: TmMaster[], history: ReplacementHistory[], risks: RiskScore[]) {
-  if (!db) return;
+  const database = db;
+  if (!database) return;
   const target = history.filter(x => x.replacementDate === replacementDate && x.removedSerialNo === removedSerialNo && x.installedSerialNo === installedSerialNo);
-  const batch = writeBatch(db);
-  target.forEach(item => batch.delete(doc(db, 'replacement_history', item.replacementId)));
+  const batch = writeBatch(database);
+  target.forEach(item => batch.delete(doc(database, 'replacement_history', item.replacementId)));
   const removed = tms.find(x => x.serialNo === removedSerialNo);
   const installed = tms.find(x => x.serialNo === installedSerialNo);
-  if (removed) batch.set(doc(db, 'tm_master', removed.serialNo), removed);
-  if (installed) batch.set(doc(db, 'tm_master', installed.serialNo), installed);
-  risks.forEach(r => batch.set(doc(db, 'risk_score', r.serialNo), r));
+  if (removed) batch.set(doc(database, 'tm_master', removed.serialNo), removed);
+  if (installed) batch.set(doc(database, 'tm_master', installed.serialNo), installed);
+  risks.forEach(r => batch.set(doc(database, 'risk_score', r.serialNo), r));
   await batch.commit();
 }
 export async function saveReplacementAtomic(item: ReplacementHistory, tms: TmMaster[], risks: RiskScore[], disposedSerialNo = '') {
