@@ -141,8 +141,9 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
       const severity = severities.find(item => item.failureType === form.failureType);
       const item: ReplacementHistory = {
         ...form,
+        removedSerialNo: form.removedSerialNo.trim(),
         removedStatus: disposal ? '불용' : form.removedStatus,
-        installedSerialNo: disposal ? '' : form.installedSerialNo,
+        installedSerialNo: disposal ? '' : form.installedSerialNo.trim(),
         installedStatus: disposal ? '' : form.installedStatus,
         replacementReason: disposal && !form.replacementReason ? '불용 처리' : form.replacementReason,
         replacementId: crypto.randomUUID(),
@@ -152,11 +153,9 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
         createdAt: now,
         updatedAt: now,
       };
-      await addReplacement(item);
-      setSaving(false);
-      onSaved();
+      try { await addReplacement(item); onSaved(); } catch (error) { console.error(error); setError(error instanceof Error ? error.message : 'Firebase 저장에 실패했습니다.'); } finally { setSaving(false); }
     }}>
-      <label className="disposal-toggle"><input type="checkbox" checked={disposal} onChange={event=>{const checked=event.target.checked;setDisposal(checked);if(checked){setInstalledMode('existing');setForm(current=>({...current,installedSerialNo:'',installedStatus:'',removedStatus:'불용',replacementReason:current.replacementReason||'불용 처리'}));}}}/><span><b>불용 처리</b><small>선택한 취거품을 활성 TM 및 위험도 목록에서 삭제하고 이력만 보존합니다.</small></span></label>
+      <label className="disposal-toggle"><input type="checkbox" checked={disposal} onChange={event=>{const checked=event.target.checked;setDisposal(checked);if(checked){setInstalledMode('existing');setForm(current=>({...current,installedSerialNo:'',installedStatus:'',removedStatus:'불용',replacementReason:current.replacementReason||'불용 처리'}));}else{setForm(current=>({...current,removedStatus:'취거',installedStatus:'운행중',replacementReason:current.replacementReason==='불용 처리'?'':current.replacementReason}));}}}/><span><b>불용 처리</b><small>선택한 취거품의 고유번호와 전체 이력을 보존하고 불용 상태로 변경합니다.</small></span></label>
       <div className="form-grid">
         <label>{disposal?'불용일자':'교체일자'}<b>*</b><input type="date" value={form.replacementDate} onChange={event => set('replacementDate', event.target.value)} /></label>
         {autoLocation ? <>
