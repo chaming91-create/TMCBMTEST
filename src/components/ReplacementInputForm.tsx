@@ -190,7 +190,7 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
         <AutoField label="고장심각도" value={form.severityClass} />
         <AutoField label="심각도 점수" value={form.severityScore} />
       </div>
-      {([['detail', '세부 고장내용'], ['actionTaken', '조치내용'], ['note', '비고']] as const).map(([key, label]) => <label className="textarea-label" key={key}>{label}<textarea rows={3} value={form[key]} onChange={event => set(key, event.target.value)} /></label>)}
+      {([['detail', '세부 고장내용'], ['actionTaken', '조치내용'], ['note', '비고']] as const).map(([key, label]) => <label className={`textarea-label textarea-${key}`} key={key}>{label}<textarea rows={3} value={form[key]} onChange={event => set(key, event.target.value)} /></label>)}
 <label className="disposal-toggle"><input type="checkbox" checked={disposal} onChange={event=>{const checked=event.target.checked;setDisposal(checked);if(checked){setInstalledMode('existing');setForm(current=>({...current,installedSerialNo:'',installedStatus:'',removedStatus:'불용',replacementReason:current.replacementReason||'불용 처리'}));}}}/><span><b>불용 처리</b><small>선택한 취거품을 활성 TM 및 위험도 목록에서 삭제하고 이력만 보존합니다.</small></span></label>
             </fieldset></div>
       <div className="step-block step-three"><h3>STEP 3 · 입력내용 확인 및 저장</h3><div className="replacement-summary">취거 <b>{form.removedSerialNo || '-'}</b> → 취부 <b>{form.installedSerialNo || (disposal ? '불용' : '-')}</b><small>{form.replacementDate || '교체일자 미입력'} · {form.failureType || '고장유형 미선택'}</small></div>
