@@ -140,3 +140,5 @@ describe('latest-date current state reconciliation', () => {
     expect(next).toMatchObject({ currentTrain: '101', currentPosition: 'M01', installDate: '2026-05-01', locationDateMismatch: false });
   });
 });
+
+describe('동일 위치 최신 교체 우선',()=>{it('같은 위치에서는 교체일자가 최신인 TM만 현재 취부로 유지한다',()=>{const rows=[tm({serialNo:'OLD',currentTrain:'114',currentCar:'8',currentPosition:'4',installDate:'2024-01-01'}),tm({serialNo:'NEW',currentTrain:'114',currentCar:'8',currentPosition:'4',installDate:'2026-01-01'})];const out=enrichTmLocationsFromReplacementHistory(rows,[]);expect(out.find(x=>x.serialNo==='NEW')).toMatchObject({currentTrain:'114',currentPosition:'4'});expect(out.find(x=>x.serialNo==='OLD')).toMatchObject({currentTrain:'',currentPosition:'',currentStatus:'취거'})})});

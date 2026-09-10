@@ -74,7 +74,7 @@ export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[],
     });
   });
 
-  return currentRows.map((tm) => {
+  const enrichedRows = currentRows.map((tm) => {
     if (isHistoryOnly(tm)) return tm;
 
     const installed = latestInstalled.get(tm.serialNo);
@@ -139,6 +139,22 @@ export function enrichTmLocationsFromReplacementHistory(currentRows: TmMaster[],
     }
 
     return next;
+  });
+
+  const winners = new Map<string, TmMaster>();
+  enrichedRows.forEach((tm) => {
+    if (isHistoryOnly(tm) || tm.isSpare || !hasKnownValue(tm.currentTrain) || !hasKnownValue(tm.currentPosition)) return;
+    const key = [tm.currentTrain, tm.currentCar, tm.currentPosition].join('|');
+    const current = winners.get(key);
+    const tmDate = comparableDate(tm.inferredReplacementDate || tm.installDate || tm.confirmedAt || '');
+    const currentDate = current ? comparableDate(current.inferredReplacementDate || current.installDate || current.confirmedAt || '') : '';
+    if (!current || tmDate >= currentDate) winners.set(key, tm);
+  });
+  return enrichedRows.map((tm) => {
+    if (isHistoryOnly(tm) || tm.isSpare || !hasKnownValue(tm.currentTrain) || !hasKnownValue(tm.currentPosition)) return tm;
+    const key = [tm.currentTrain, tm.currentCar, tm.currentPosition].join('|');
+    if (winners.get(key)?.serialNo === tm.serialNo) return tm;
+    return { ...tm, currentStatus: '취거', currentTrain: '', currentCar: '', currentPosition: '', currentUnit: '', isSpare: false, locationSource: '교체현황 최신 부착이력' as const };
   });
 }
 
