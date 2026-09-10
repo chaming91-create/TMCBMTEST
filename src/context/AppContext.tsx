@@ -8,7 +8,7 @@ import { calculateAllRisks } from '../lib/riskCalculator';
 import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent } from '../lib/tmState';
 import { validateData } from '../lib/validators';
 import { mergeHistoryImports, mergeTmImports } from '../lib/importMerge';
-import { addAudit, backupDatabase, deleteDataSnapshot, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
+import { addAudit, backupDatabase, deleteDataSnapshot, deleteReplacementHistory, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
 import { firebaseConfigured } from '../lib/firebase';
 import { parseReplacementHistorySheet, parseSeverityClassificationSheet, parseTMInstallationSheet, readWorkbookFromFile, toSeverityMap } from '../lib/excelParser';
 import defaultTmWorkbookUrl from '../../0. data1(TM 취부 현황) v2.xlsx?url';
@@ -127,6 +127,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTms(next); setHistory(nextHistory); await saveReplacementAtomic(value, next, nextRisks, disposedSerialNo); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
   };
   const updateSettings = async (value: RiskSettings, masters: SeverityMaster[]) => { setSettings(value); setSeverities(masters); const next = calculateAllRisks(tms, history, masters, value); await saveRemoteSettings(value, masters, next); await log('SETTINGS_UPDATE', 'settings', '', settings, value, '위험도 설정 변경 및 재계산'); };
-  return <C.Provider value={{ tms, history, risks, severities, settings, issues, snapshots, saveSnapshot, loadSnapshot, removeSnapshot, setTmImport, setHistoryImport, resetAllData, addReplacement, updateSettings, log }}>{children}</C.Provider>;
+  return <C.Provider value={{ tms, history, risks, severities, settings, issues, snapshots, saveSnapshot, loadSnapshot, removeSnapshot, deleteReplacement, setTmImport, setHistoryImport, resetAllData, addReplacement, updateSettings, log }}>{children}</C.Provider>;
 }
 export const useApp = () => { const value = useContext(C); if (!value) throw new Error('AppProvider가 필요합니다.'); return value; };
