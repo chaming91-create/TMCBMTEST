@@ -45,7 +45,7 @@ Firebase 실사용 모드가 필요하면 Cloudflare Pages의 Settings > Environ
 ## Firebase 설정
 
 1. Firebase Console에서 프로젝트를 생성합니다.
-2. Authentication에서 이메일/비밀번호 로그인을 활성화하고 사용자를 추가합니다.
+2. 앱 입장은 접근 비밀번호만 사용하며 이메일 로그인 화면은 제공하지 않습니다. 기존 Firestore/Storage 규칙은 Firebase 인증을 요구하므로, 접근 비밀번호만으로는 공유 데이터 읽기/쓰기가 허용되지 않습니다. 공유 데이터 사용 시 별도 인증 연동이 필요합니다.
 3. Firestore Database와 Storage를 생성합니다.
 4. 프로젝트 설정에서 웹 앱을 추가하고 Firebase 구성값을 확인합니다.
 5. `.env.example`을 참고해 프로젝트 루트에 `.env.local`을 만들고 실제 값을 입력합니다.
