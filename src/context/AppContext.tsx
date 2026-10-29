@@ -7,12 +7,11 @@ import { DEFAULT_SETTINGS, DEFAULT_SEVERITIES } from '../lib/defaults';
 import { calculateAllRisks } from '../lib/riskCalculator';
 import { applyHistoryImportToTmState, enrichTmLocationsFromReplacementHistory, isReplacementNewerThanCurrent } from '../lib/tmState';
 import { validateData } from '../lib/validators';
-import { mergeHistoryImports, mergeTmImports, replaceTmImports, replaceHistoryImports } from '../lib/importMerge';
-import { addAudit, backupDatabase, deleteDataSnapshot, deleteReplacementHistory, rollbackReplacementAtomic, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection, readCollection } from '../lib/firestoreService';
-import { firebaseConfigured } from '../lib/firebase';
-import { parseReplacementHistorySheet, parseSeverityClassificationSheet, parseTMInstallationSheet, readWorkbookFromFile, toSeverityMap } from '../lib/excelParser';
-import defaultTmWorkbookUrl from '../../0. data1(TM 취부 현황) v2.xlsx?url';
-import defaultHistoryWorkbookUrl from '../../0. data2(TM_교체현황_고장심각도) v2.xlsx?url';
+import { replaceTmImports, replaceHistoryImports } from '../lib/importMerge';
+import { addAudit, backupDatabase, deleteDataSnapshot, deleteReplacementHistory, rollbackReplacementAtomic, replaceHistoryData, replaceTmData, resetDatabase, restoreDatabase, saveDataSnapshot, saveReplacementAtomic, saveSettings as saveRemoteSettings, subscribeCollection } from '../lib/firestoreService';
+import { auth } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { EMPTY_DATA_KEY, loadInitialData } from '../lib/initialData';
 
 interface State { tms: TmMaster[]; history: ReplacementHistory[]; risks: RiskScore[]; severities: SeverityMaster[]; settings: RiskSettings; issues: ValidationIssue[]; snapshots:DataSnapshot[]; saveSnapshot:(name:string)=>Promise<void>; loadSnapshot:(snapshot:DataSnapshot)=>Promise<void>; removeSnapshot:(snapshotId:string)=>Promise<void>; deleteReplacement:(replacementId:string)=>Promise<void>; setTmImport: (v: TmMaster[], note?: string) => Promise<number>; setHistoryImport: (v: ReplacementHistory[], note?: string, severityOverride?: SeverityMaster[]) => Promise<number>; resetAllData: () => Promise<void>; addReplacement: (v: ReplacementHistory) => Promise<void>; updateSettings: (s: RiskSettings, sm: SeverityMaster[]) => Promise<void>; log: (eventType: string, targetTable: string, serialNo: string, beforeValue: unknown, afterValue: unknown, note: string) => Promise<void>; }
 const C = createContext<State | null>(null);
@@ -20,51 +19,31 @@ const legacyKeys: Record<string, string> = { ai_parts_tms: 'cbm_tms', ai_parts_h
 const load = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || localStorage.getItem(legacyKeys[key] || '') || '') as T; } catch { return fallback; } };
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [tms, setTms] = useState<TmMaster[]>(() => load('ai_parts_tms', []));
-  const [history, setHistory] = useState<ReplacementHistory[]>(() => load('ai_parts_history', []));
-  const [severities, setSeverities] = useState<SeverityMaster[]>(() => load('ai_parts_severities', DEFAULT_SEVERITIES));
-  const [settings, setSettings] = useState<RiskSettings>(() => load('ai_parts_settings', DEFAULT_SETTINGS));
+  const [initialData] = useState(() => loadInitialData(localStorage));
+  const [tms, setTms] = useState<TmMaster[]>(initialData.tms);
+  const [history, setHistory] = useState<ReplacementHistory[]>(initialData.history);
+  const [severities, setSeverities] = useState<SeverityMaster[]>(initialData.severities);
+  const [settings, setSettings] = useState<RiskSettings>(initialData.settings);
   const [snapshots,setSnapshots]=useState<DataSnapshot[]>(()=>load('ai_parts_snapshots',[]));
   const risks = useMemo(() => calculateAllRisks(tms, history, severities, settings), [tms, history, severities, settings]);
   const issues = useMemo(() => validateData(tms, history, severities, settings), [tms, history, severities, settings]);
 
   useEffect(() => {
-    const seedKey = 'ai_parts_default_workbooks_v2';
-    void (async () => {
-      try {
-        if (firebaseConfigured) {
-          const [remoteTms, remoteHistory] = await Promise.all([readCollection<TmMaster>('tm_master'), readCollection<ReplacementHistory>('replacement_history')]);
-          if (remoteTms.length || remoteHistory.length) return;
-        } else if (tms.length || history.length || localStorage.getItem(seedKey)) return;
-        const loadWorkbook = async (url: string, name: string) => {
-          const response = await fetch(url);
-          if (!response.ok) throw new Error(`기본 현황파일을 불러오지 못했습니다: ${name}`);
-          return readWorkbookFromFile(new File([await response.blob()], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-        };
-        const [tmWorkbook, historyWorkbook] = await Promise.all([loadWorkbook(defaultTmWorkbookUrl, '기본 TM 취부현황.xlsx'), loadWorkbook(defaultHistoryWorkbookUrl, '기본 TM 교체현황.xlsx')]);
-        const defaultSeverities = parseSeverityClassificationSheet(historyWorkbook);
-        const importedTms = parseTMInstallationSheet(tmWorkbook, settings.referenceYear);
-        const importedHistory = parseReplacementHistorySheet(historyWorkbook, toSeverityMap(defaultSeverities));
-        const seededHistory = mergeHistoryImports([], importedHistory);
-        const seededTms = enrichTmLocationsFromReplacementHistory(applyHistoryImportToTmState(mergeTmImports([], importedTms), seededHistory, settings.referenceYear, new Date().toISOString()), seededHistory);
-        const seededSeverities = defaultSeverities.length ? defaultSeverities : DEFAULT_SEVERITIES;
-        const seededRisks = calculateAllRisks(seededTms, seededHistory, seededSeverities, settings);
-        setTms(seededTms); setHistory(seededHistory); setSeverities(seededSeverities);
-        if (firebaseConfigured) { await replaceTmData(seededTms, seededRisks); await replaceHistoryData(seededHistory, seededRisks); await saveRemoteSettings(settings, seededSeverities, seededRisks); }
-        localStorage.setItem(seedKey, 'done');
-      } catch (error) { localStorage.removeItem(seedKey); console.error(error); }
-    })();
-  }, []);
-  useEffect(() => {
-    if (!firebaseConfigured) return;
-    const stops = [
-      subscribeCollection<TmMaster>('tm_master', setTms),
-      subscribeCollection<ReplacementHistory>('replacement_history', setHistory),
-      subscribeCollection<SeverityMaster>('severity_master', (items) => { if (items.length) setSeverities(items); }),
-      subscribeCollection<RiskSettings>('settings', (items) => { if (items.length) setSettings(items[0]); }),
-      subscribeCollection<DataSnapshot>('data_snapshots', items => setSnapshots(items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))),
-    ];
-    return () => stops.forEach(stop => stop());
+    if (!auth) return;
+    let stops: (() => void)[] = [];
+    const stopAuth = onAuthStateChanged(auth, user => {
+      stops.forEach(stop => stop());
+      stops = [];
+      if (!user) return;
+      stops = [
+        subscribeCollection<TmMaster>('tm_master', items => { if (items.length) setTms(items); }),
+        subscribeCollection<ReplacementHistory>('replacement_history', items => { if (items.length) setHistory(items); }),
+        subscribeCollection<SeverityMaster>('severity_master', items => { if (items.length) setSeverities(items); }),
+        subscribeCollection<RiskSettings>('settings', items => { if (items.length) setSettings(items[0]); }),
+        subscribeCollection<DataSnapshot>('data_snapshots', items => setSnapshots(items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))),
+      ];
+    });
+    return () => { stopAuth(); stops.forEach(stop => stop()); };
   }, []);
   useEffect(() => localStorage.setItem('ai_parts_tms', JSON.stringify(tms)), [tms]);
   useEffect(() => localStorage.setItem('ai_parts_history', JSON.stringify(history)), [history]);
@@ -92,7 +71,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const withHistoryOnly = applyHistoryImportToTmState(tms, nextHistory, settings.referenceYear, now), nextTms = enrichTmLocationsFromReplacementHistory(withHistoryOnly, nextHistory), nextRisks = calculateAllRisks(nextTms, nextHistory, effectiveSeverities, settings);
     setTms(nextTms); setHistory(nextHistory); await replaceTmData(nextTms, nextRisks); await replaceHistoryData(nextHistory, nextRisks); await log('EXCEL_IMPORT_REPLACE', 'replacement_history', '', history, nextHistory, note); return nextHistory.length;
   };
-  const resetAllData = async () => { await backupDatabase({ tms, history, risks, severities, settings }); await resetDatabase(); setTms([]); setHistory([]); setSeverities(DEFAULT_SEVERITIES); setSettings(DEFAULT_SETTINGS); await log('DATABASE_RESET','all','',{tms:tms.length,history:history.length},{tms:0,history:0},'새 파일 업로드를 위한 전체 초기화'); };
+  const resetAllData = async () => { await backupDatabase({ tms, history, risks, severities, settings }); await resetDatabase(); localStorage.setItem(EMPTY_DATA_KEY, 'Y'); setTms([]); setHistory([]); setSeverities(DEFAULT_SEVERITIES); setSettings(DEFAULT_SETTINGS); await log('DATABASE_RESET','all','',{tms:tms.length,history:history.length},{tms:0,history:0},'새 파일 업로드를 위한 전체 초기화'); };
   const saveSnapshot = async (name:string) => { const snapshot:DataSnapshot={snapshotId:crypto.randomUUID(),name:name.trim(),createdAt:new Date().toISOString(),tmCount:tms.length,historyCount:history.length,tms,history,risks,severities,settings}; setSnapshots(current=>[snapshot,...current]); await saveDataSnapshot(snapshot); await log('SNAPSHOT_SAVE','data_snapshots','',null,{snapshotId:snapshot.snapshotId,name:snapshot.name},'데이터 시점 저장'); };
   const loadSnapshot = async (snapshot:DataSnapshot) => { await backupDatabase({tms,history,risks,severities,settings}); await restoreDatabase(snapshot); setTms(snapshot.tms);setHistory(snapshot.history);setSeverities(snapshot.severities);setSettings(snapshot.settings);await log('SNAPSHOT_LOAD','data_snapshots','',{tms:tms.length,history:history.length},{snapshotId:snapshot.snapshotId,name:snapshot.name},'저장 시점 불러오기'); };
   const removeSnapshot = async (snapshotId:string) => { setSnapshots(current=>current.filter(item=>item.snapshotId!==snapshotId)); await deleteDataSnapshot(snapshotId); };
