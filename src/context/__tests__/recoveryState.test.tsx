@@ -1,17 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../lib/defaults';
 import { dataVersion, RECOVERY_JOURNAL_KEY } from '../../lib/dataRecovery';
+import { createFileBackup, verifyFileBackup } from '../../lib/fileBackup';
 import type { DataSnapshot } from '../../types/snapshot';
 import type { ReplacementHistory } from '../../types/replacement';
 import type { TmMaster } from '../../types/tm';
 
-const h = vi.hoisted(() => ({ cursor: 0, slots: [] as unknown[], effects: [] as Array<() => void>, subscriptions: new Map<string, (items: unknown[]) => void>(), apply: vi.fn(), save: vi.fn(), initial: {} as object }));
+const h = vi.hoisted(() => ({ cursor: 0, slots: [] as unknown[], effects: [] as Array<() => void>, subscriptions: new Map<string, (items: unknown[]) => void>(), backup: vi.fn(), prepare: vi.fn(), commit: vi.fn(), apply: vi.fn(), save: vi.fn(), initial: {} as object }));
 vi.mock('react', () => ({
   createContext: () => ({ Provider: 'test-provider' }), useContext: vi.fn(),
   useState: (initial: unknown) => { const i = h.cursor++; if (!(i in h.slots)) h.slots[i] = typeof initial === 'function' ? initial() : initial; return [h.slots[i], (value: unknown) => { h.slots[i] = typeof value === 'function' ? value(h.slots[i]) : value; }]; },
   useRef: (initial: unknown) => { const i = h.cursor++; return h.slots[i] ?? (h.slots[i] = { current: initial }); },
   useMemo: (fn: () => unknown) => fn(), useEffect: (fn: () => void) => { h.effects.push(fn); },
 }));
+vi.mock('../../lib/browserBackupStore', () => ({ hideBrowserSnapshot: async () => {}, initializeBrowserStorage: async () => ({ current: undefined, snapshots: [], warning: '' }), saveBrowserSnapshot: (...args: unknown[]) => h.backup(...args), saveBrowserState: async () => {}, saveBrowserAudit: async () => {}, prepareBrowserRecovery: (...args: unknown[]) => h.prepare(...args), commitBrowserRecovery: (...args: unknown[]) => h.commit(...args) }));
 vi.mock('../../lib/initialData', () => ({ EMPTY_DATA_KEY: 'empty-test', loadInitialData: () => h.initial }));
 vi.mock('../../lib/firebase', () => ({ auth: {} }));
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: (_auth: object, cb: (user: object) => void) => { cb({ uid: 'test' }); return () => {}; } }));
@@ -25,11 +27,13 @@ const row = (id: string): ReplacementHistory => ({ replacementId: id, replacemen
 const master: TmMaster = { serialNo: 'A', manufacturer: 'M', manufactureYear: 2020, ageYear: 6, currentStatus: '운행중', isSpare: false, currentTrain: '111', currentCar: '1', currentPosition: '1', installDate: '', sourceType: 'current_excel', createdAt: '', updatedAt: '' };
 const render = () => { h.cursor = 0; h.effects = []; return AppProvider({ children: null }).props.value; };
 const saved = (): DataSnapshot => ({ snapshotId: 'existing-protected', name: '10월 정기 점검 완료', createdAt: '2026-10-29T00:00:00Z', tmCount: 1, historyCount: 128, tms: [master], history: Array.from({ length: 128 }, (_, i) => row(`R-${i}`)), risks: [], severities: [], settings: DEFAULT_SETTINGS });
-beforeEach(() => {
+beforeEach(async () => {
   h.cursor = 0; h.slots = []; h.effects = []; h.subscriptions.clear(); h.apply.mockReset(); h.apply.mockResolvedValue(undefined); h.save.mockReset(); h.save.mockResolvedValue(undefined);
+  h.backup.mockReset(); h.backup.mockResolvedValue(undefined); h.prepare.mockReset(); h.prepare.mockResolvedValue(undefined); h.commit.mockReset(); h.commit.mockResolvedValue(undefined);
   h.initial = { tms: [master], history: Array.from({ length: 133 }, (_, i) => row(`R-${i}`)), severities: [], settings: DEFAULT_SETTINGS };
   const storage = new Map<string, string>();
   vi.stubGlobal('localStorage', { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) });
+  render(); h.effects.forEach(effect => effect()); await Promise.resolve(); await Promise.resolve(); render();
 });
 describe('restore/delete browser state and subscription coordination', () => {
   it('blocks stale callbacks during and after recovery and applies the complete restored state once', async () => {
@@ -39,11 +43,11 @@ describe('restore/delete browser state and subscription coordination', () => {
     const operation = context.loadSnapshot(saved(), dataVersion(context));
     old(Array.from({ length: 133 }, (_, i) => row(`OLD-${i}`)));
     expect(render().history).toHaveLength(133);
-    finish(); await operation;
+    await vi.waitFor(() => expect(h.apply).toHaveBeenCalledTimes(1)); finish(); await operation;
     old(Array.from({ length: 133 }, (_, i) => row(`STALE-${i}`)));
     context = render(); expect(context.history).toHaveLength(128); expect(context.tms).toEqual(saved().tms);
     expect(h.apply).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(localStorage.getItem(RECOVERY_JOURNAL_KEY)!).committed).toBe(true);
+    expect(h.commit).toHaveBeenCalledTimes(1); expect(h.backup.mock.calls[0][0].history).toHaveLength(133);
     expect(context.snapshots.some((item: DataSnapshot) => item.name.includes('자동 백업') && item.history.length === 133)).toBe(true);
   });
   it('does not change current data on a failed transaction', async () => {
@@ -65,7 +69,7 @@ describe('restore/delete browser state and subscription coordination', () => {
     const context = render(); let finish!: () => void; h.apply.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
     const operation = context.deleteReplacement('R-0', dataVersion(context));
     await expect(context.deleteReplacement('R-1')).rejects.toThrow('진행 중');
-    finish(); await operation;
+    await vi.waitFor(() => expect(h.apply).toHaveBeenCalledTimes(1)); finish(); await operation;
     expect(render().history).toHaveLength(132); expect(render().history.some((item: ReplacementHistory) => item.replacementId === 'R-0')).toBe(false);
     expect(h.apply).toHaveBeenCalledTimes(1);
   });
@@ -73,5 +77,33 @@ describe('restore/delete browser state and subscription coordination', () => {
     const context = render(); h.save.mockRejectedValue(new Error('mock permission denied'));
     await expect(context.addReplacement({ ...row('NEW'), inputSource: 'manual' })).rejects.toThrow('permission denied');
     expect(render().history).toHaveLength(133); expect(render().tms).toEqual([master]);
+  });
+});
+
+describe('backup quota gating', () => {
+  it('does not touch server or current data when automatic backup verification fails', async () => {
+    const context = render(); h.backup.mockRejectedValue(new Error('IndexedDB quota exceeded'));
+    await expect(context.deleteReplacement('R-0', dataVersion(context))).rejects.toThrow('quota');
+    expect(h.apply).not.toHaveBeenCalled(); expect(render().history).toHaveLength(133);
+  });
+  it('continues exactly once after a saved JSON was reread and verified despite automatic backup quota failure', async () => {
+    const context = render(); const request = createFileBackup(context, '교체이력 삭제'); const proof = verifyFileBackup(request.text, request);
+    h.backup.mockRejectedValue(new Error('quota'));
+    await context.deleteReplacement('R-0', dataVersion(context), proof);
+    expect(h.apply).toHaveBeenCalledTimes(1); expect(render().history).toHaveLength(132);
+    expect(h.apply.mock.calls[0][2].snapshotId).toBe(JSON.parse(request.text).snapshot.snapshotId);
+  });
+  it('rejects a merely requested download and refuses mutation when result storage cannot be reserved', async () => {
+    const context = render(); createFileBackup(context, '삭제');
+    await expect(context.deleteReplacement('R-0', dataVersion(context), { method: 'verified-file' })).rejects.toThrow('확인되지');
+    expect(h.apply).not.toHaveBeenCalled();
+    h.prepare.mockRejectedValue(new Error('quota'));
+    await expect(context.loadSnapshot(saved(), dataVersion(context))).rejects.toThrow('공간');
+    expect(h.apply).not.toHaveBeenCalled(); expect(render().history).toHaveLength(133);
+  });
+  it('restores 133 to 128 with verified file backup without modifying the selected original snapshot', async () => {
+    const context = render(); const original = saved(); const text = JSON.stringify(original); const request = createFileBackup(context, '복원');
+    await context.loadSnapshot(original, dataVersion(context), verifyFileBackup(request.text, request));
+    expect(render().history).toHaveLength(128); expect(JSON.stringify(original)).toBe(text); expect(h.commit).toHaveBeenCalledTimes(1);
   });
 });

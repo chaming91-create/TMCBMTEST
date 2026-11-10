@@ -3,3 +3,4 @@
 .data-change-confirmation .change-list article+article{border-top:1px solid #dbe5ef;margin-top:10px;padding-top:10px}
 .data-change-confirmation .change-list p{margin:4px 0;line-height:1.5;overflow-wrap:anywhere}
 .data-change-confirmation .change-counts{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0;font-weight:700}
+.file-backup-alternative{padding:12px;border:1px solid #dbe5ef;border-radius:8px;margin:16px 0}.file-backup-alternative summary{cursor:pointer;font-weight:700}.file-backup-alternative label{display:grid;gap:8px;margin-top:12px}.file-backup-alternative input{max-width:100%}
