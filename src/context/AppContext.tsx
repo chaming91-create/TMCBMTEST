@@ -13,7 +13,7 @@ import { auth } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { EMPTY_DATA_KEY, loadInitialData } from '../lib/initialData';
 
-interface State { tms: TmMaster[]; history: ReplacementHistory[]; risks: RiskScore[]; severities: SeverityMaster[]; settings: RiskSettings; issues: ValidationIssue[]; snapshots:DataSnapshot[]; saveSnapshot:(name:string)=>Promise<void>; loadSnapshot:(snapshot:DataSnapshot)=>Promise<void>; removeSnapshot:(snapshotId:string)=>Promise<void>; deleteReplacement:(replacementId:string)=>Promise<void>; setTmImport: (v: TmMaster[], note?: string) => Promise<number>; setHistoryImport: (v: ReplacementHistory[], note?: string, severityOverride?: SeverityMaster[]) => Promise<number>; resetAllData: () => Promise<void>; addReplacement: (v: ReplacementHistory) => Promise<void>; updateSettings: (s: RiskSettings, sm: SeverityMaster[]) => Promise<void>; log: (eventType: string, targetTable: string, serialNo: string, beforeValue: unknown, afterValue: unknown, note: string) => Promise<void>; }
+interface State { tms: TmMaster[]; history: ReplacementHistory[]; historyError: string; risks: RiskScore[]; severities: SeverityMaster[]; settings: RiskSettings; issues: ValidationIssue[]; snapshots:DataSnapshot[]; saveSnapshot:(name:string)=>Promise<void>; loadSnapshot:(snapshot:DataSnapshot)=>Promise<void>; removeSnapshot:(snapshotId:string)=>Promise<void>; deleteReplacement:(replacementId:string)=>Promise<void>; setTmImport: (v: TmMaster[], note?: string) => Promise<number>; setHistoryImport: (v: ReplacementHistory[], note?: string, severityOverride?: SeverityMaster[]) => Promise<number>; resetAllData: () => Promise<void>; addReplacement: (v: ReplacementHistory) => Promise<void>; updateSettings: (s: RiskSettings, sm: SeverityMaster[]) => Promise<void>; log: (eventType: string, targetTable: string, serialNo: string, beforeValue: unknown, afterValue: unknown, note: string) => Promise<void>; }
 const C = createContext<State | null>(null);
 const legacyKeys: Record<string, string> = { ai_parts_tms: 'cbm_tms', ai_parts_history: 'cbm_history', ai_parts_severities: 'cbm_severities', ai_parts_settings: 'cbm_settings', ai_parts_audit: 'cbm_audit' };
 const load = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || localStorage.getItem(legacyKeys[key] || '') || '') as T; } catch { return fallback; } };
@@ -21,6 +21,7 @@ const load = <T,>(key: string, fallback: T): T => { try { return JSON.parse(loca
 export function AppProvider({ children }: { children: ReactNode }) {
   const [initialData] = useState(() => loadInitialData(localStorage));
   const [tms, setTms] = useState<TmMaster[]>(initialData.tms);
+  const [historyError, setHistoryError] = useState('');
   const [history, setHistory] = useState<ReplacementHistory[]>(initialData.history);
   const [severities, setSeverities] = useState<SeverityMaster[]>(initialData.severities);
   const [settings, setSettings] = useState<RiskSettings>(initialData.settings);
@@ -34,10 +35,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const stopAuth = onAuthStateChanged(auth, user => {
       stops.forEach(stop => stop());
       stops = [];
+      setHistoryError('');
       if (!user) return;
       stops = [
         subscribeCollection<TmMaster>('tm_master', items => { if (items.length) setTms(items); }),
-        subscribeCollection<ReplacementHistory>('replacement_history', items => { if (items.length) setHistory(items); }),
+        subscribeCollection<ReplacementHistory>('replacement_history', items => { setHistoryError(''); if (items.length) setHistory(items); }, () => setHistoryError('교체이력을 불러오지 못했습니다. 기존 표시 데이터가 최신이 아닐 수 있습니다. 연결 상태와 접근 권한을 확인해 주세요.')),
         subscribeCollection<SeverityMaster>('severity_master', items => { if (items.length) setSeverities(items); }),
         subscribeCollection<RiskSettings>('settings', items => { if (items.length) setSettings(items[0]); }),
         subscribeCollection<DataSnapshot>('data_snapshots', items => setSnapshots(items.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)))),
@@ -132,6 +134,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTms(next); setHistory(nextHistory); await saveReplacementAtomic(savedValue, next, nextRisks, disposedSerialNo); await log('MANUAL_REPLACEMENT', 'replacement_history', value.removedSerialNo, null, value, '신규 교체정보 입력');
   };
   const updateSettings = async (value: RiskSettings, masters: SeverityMaster[]) => { setSettings(value); setSeverities(masters); const next = calculateAllRisks(tms, history, masters, value); await saveRemoteSettings(value, masters, next); await log('SETTINGS_UPDATE', 'settings', '', settings, value, '위험도 설정 변경 및 재계산'); };
-  return <C.Provider value={{ tms, history, risks, severities, settings, issues, snapshots, saveSnapshot, loadSnapshot, removeSnapshot, deleteReplacement, setTmImport, setHistoryImport, resetAllData, addReplacement, updateSettings, log }}>{children}</C.Provider>;
+  return <C.Provider value={{ tms, history, historyError, risks, severities, settings, issues, snapshots, saveSnapshot, loadSnapshot, removeSnapshot, deleteReplacement, setTmImport, setHistoryImport, resetAllData, addReplacement, updateSettings, log }}>{children}</C.Provider>;
 }
 export const useApp = () => { const value = useContext(C); if (!value) throw new Error('AppProvider가 필요합니다.'); return value; };

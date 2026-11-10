@@ -85,5 +85,5 @@ export async function saveReplacementAtomic(item: ReplacementHistory, tms: TmMas
     risks.forEach(r => tx.set(doc(database, 'risk_score', r.serialNo), r));
   });
 }
-export function subscribeCollection<T>(name: string, cb: (items: T[]) => void) { if (!db) return () => {}; return onSnapshot(collection(db, name), snap => cb(snap.docs.map(d => d.data() as T))); }
+export function subscribeCollection<T>(name: string, cb: (items: T[]) => void, onError?: (error: Error) => void) { if (!db) return () => {}; return onSnapshot(collection(db, name), snap => cb(snap.docs.map(d => d.data() as T)), onError); }
 export async function readCollection<T>(name: string) { if (!db) return []; return (await getDocs(collection(db, name))).docs.map(d => d.data() as T); }

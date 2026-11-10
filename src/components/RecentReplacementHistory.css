@@ -1,0 +1,8 @@
+.recent-replacements .table-wrap{overflow-x:auto}
+.recent-replacements table{min-width:650px;width:100%}
+.recent-replacements .recent-history-reason{max-width:260px}
+.recent-history-reason summary{cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#3273dc;text-decoration:underline;text-underline-offset:3px}
+.recent-history-reason p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;margin:8px 0}
+.recent-history-empty{padding:0 20px 20px;color:#65758b}
+.recent-replacements .form-error{margin:12px 20px}
+@media(max-width:600px){.recent-replacements .panel-heading{gap:12px;flex-wrap:wrap}.recent-replacements .recent-history-reason{max-width:180px}}
