@@ -1,0 +1,11 @@
+.replacement-confirmation{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 48px);box-sizing:border-box;overflow:auto;border:1px solid #dbe5ef;border-radius:16px;padding:24px;color:#172b4d;background:white;box-shadow:0 20px 60px #102a4340}
+.replacement-confirmation::backdrop{background:#102a4380}
+.replacement-confirmation h2{margin:0 0 8px;font-size:22px}
+.replacement-confirmation>p{line-height:1.6}
+.replacement-confirmation dl{display:grid;gap:8px;margin:20px 0}
+.replacement-confirmation dl>div{padding:10px 12px;border-radius:8px;background:#f3f6fa}
+.replacement-confirmation dt{font-size:13px;color:#52677c;margin-bottom:4px}
+.replacement-confirmation dd{margin:0;font-weight:700;white-space:pre-wrap;overflow-wrap:anywhere}
+.replacement-confirmation .removed-serial{border-left:4px solid #e68934}
+.replacement-confirmation .installed-serial{border-left:4px solid #19a974}
+.replacement-confirmation .form-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px}

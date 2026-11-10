@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import './ReplacementConfirmation.css';
 import { Save } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import type { ReplacementHistory } from '../types/replacement';
@@ -88,6 +89,36 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [disposal, setDisposal] = useState(false);
+  const [pending, setPending] = useState<ReplacementHistory | null>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const saveLock = useRef(false);
+  useEffect(() => {
+    if (pending && !dialog.current?.open) dialog.current?.showModal();
+    if (!pending && dialog.current?.open) dialog.current.close();
+  }, [pending]);
+  const cancelConfirmation = () => {
+    if (saveLock.current) return;
+    setPending(null);
+    setError('');
+  };
+  const confirmSave = async () => {
+    if (!pending || saveLock.current) return;
+    saveLock.current = true;
+    setSaving(true);
+    setError('');
+    try {
+      await addReplacement(pending);
+    } catch {
+      setError('저장하지 못했습니다. 입력 내용은 유지되었습니다. 저장 결과를 확인한 뒤 다시 시도해 주세요.');
+      return;
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
+    }
+    setPending(null);
+    window.alert('교체정보가 저장되었습니다.');
+    onSaved();
+  };
   const set = (key: FormKey, value: string) => setForm(current => ({ ...current, [key]: value }));
   const removedTm = useMemo(() => tms.find(tm => tm.serialNo === form.removedSerialNo), [tms, form.removedSerialNo]);
   const hasSelection = disposal ? Boolean(form.removedSerialNo) : Boolean(form.removedSerialNo && form.installedSerialNo);
@@ -132,8 +163,9 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
       <div><span className="step-label">STEP 1 · TM 선택</span><h2>신규 교체정보 등록</h2><p>기존 부품은 체크박스로 선택하고, 신규 부품은 시리얼번호를 직접 입력합니다.</p></div>
       <span>필수 항목 *</span>
     </div>
-    <form onSubmit={async event => {
+    <form inert={Boolean(pending)} onSubmit={event => {
       event.preventDefault();
+      if (pending || saveLock.current) return;
       if (!form.replacementDate || (!form.removedSerialNo && !form.installedSerialNo)) {
         setError('교체일자와 취거/취부 시리얼번호 중 하나 이상을 입력하세요.');
         return;
@@ -142,7 +174,6 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
         setError('편성과 위치를 확인하세요. 기존 시리얼 선택 시 자동 입력되며, 신규 입력 시 직접 입력해야 합니다.');
         return;
       }
-      setSaving(true);
       setError('');
       const now = new Date().toISOString();
       const severity = severities.find(item => item.failureType === form.failureType);
@@ -159,9 +190,7 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
         createdAt: now,
         updatedAt: now,
       };
-      await addReplacement(item);
-      setSaving(false);
-      onSaved();
+      setPending(item);
     }}>
       <div className="step-block"><h3>STEP 1 · TM 선택</h3><p>취거 TM과 취부 TM을 먼저 선택하세요.</p><div className="serial-grid">
         <SerialChooser label="취거 TM Serial No." mode={removedMode} serial={form.removedSerialNo} tms={tms} onMode={mode => updateSerialMode('removed', mode)} onSerial={value => set('removedSerialNo', value)} filter={tm => tm.isSpare === false && (tm.currentStatus.includes('운') || tm.currentStatus.includes('운영'))} />
@@ -197,5 +226,29 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
       {error && <div className="form-error">{error}</div>}
       <div className="form-actions"><button type="button" onClick={() => { setForm(empty); setAutoLocation(false); setDisposal(false); }}>입력 초기화</button><button className="primary" disabled={saving}><Save />{saving ? '저장 중...' : disposal ? '불용 처리 저장' : '교체정보 저장'}</button></div></div>
     </form>
+    <dialog ref={dialog} className="replacement-confirmation" aria-labelledby="replacement-confirmation-title" onCancel={event => { event.preventDefault(); cancelConfirmation(); }} onClose={cancelConfirmation} onClick={event => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) cancelConfirmation(); } }}>
+      {pending && <>
+        <h2 id="replacement-confirmation-title">교체정보 최종 확인</h2>
+        <p>입력 내용을 확인한 후 저장해 주세요.</p>
+        <dl>
+          {([
+            ['교체일자', pending.replacementDate],
+            ['편성번호', pending.trainNo],
+            ['호차', pending.carNo],
+            ['교체위치(위수)', pending.position],
+            ['취거 TM 시리얼번호', pending.removedSerialNo],
+            ['취부 TM 시리얼번호', pending.installedSerialNo],
+            ['취거품 상태', pending.removedStatus],
+            ['취부품 상태', pending.installedStatus],
+            ['교체유형(고장유형)', pending.failureType],
+            ['교체사유', pending.replacementReason],
+          ] as const).filter(([, value]) => value !== '').map(([label, value]) => <div key={label} className={label.startsWith('취거 TM') ? 'removed-serial' : label.startsWith('취부 TM') ? 'installed-serial' : ''}><dt>{label}</dt><dd>{value}</dd></div>)}
+        </dl>
+        {pending.removedStatus === '불용' && <p className="form-error">불용 처리: 취거품이 활성 TM 및 위험도 목록에서 삭제되고 이력만 보존됩니다.</p>}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <p role="status" aria-live="polite">{saving ? '저장 중입니다. 잠시 기다려 주세요.' : ''}</p>
+        <div className="form-actions"><button type="button" autoFocus disabled={saving} onClick={cancelConfirmation}>수정하기</button><button type="button" className="primary" disabled={saving} onClick={confirmSave}><Save />{saving ? '저장 중...' : '확인 후 저장'}</button></div>
+      </>}
+    </dialog>
   </section>;
 }
