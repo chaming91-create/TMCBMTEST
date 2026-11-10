@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { APP_STATE_KEY, RECOVERY_JOURNAL_KEY } from '../dataRecovery';
+import { DEFAULT_SETTINGS } from '../defaults';
 import { EMPTY_DATA_KEY, loadInitialData } from '../initialData';
 
 const storage = (values: Record<string, string> = {}) => ({ getItem: (key: string) => values[key] ?? null });
@@ -45,5 +47,19 @@ describe('first visit workbook data', () => {
 
   it('retains data stored under legacy keys', () => {
     expect(loadInitialData(storage({ cbm_tms: '[{"serialNo":"LEGACY"}]' })).tms).toEqual([{ serialNo: 'LEGACY' }]);
+  });
+});
+
+describe('complete local state after recovery', () => {
+  const state = { tms: [], history: [], severities: [], settings: DEFAULT_SETTINGS };
+  it('preserves a completely empty restored state rather than reseeding 133 original histories', () => {
+    expect(loadInitialData(storage({ [APP_STATE_KEY]: JSON.stringify(state), ai_parts_history: '[{"replacementId":"OLD"}]' }))).toEqual(state);
+  });
+  it('uses a committed recovery journal if the normal cache has not caught up', () => {
+    const next = { ...state, history: [{ replacementId: 'RESTORED' }] };
+    expect(loadInitialData(storage({ [APP_STATE_KEY]: JSON.stringify(state), [RECOVERY_JOURNAL_KEY]: JSON.stringify({ committed: true, next }) })).history).toEqual(next.history);
+  });
+  it('does not apply an interrupted uncommitted recovery on reload', () => {
+    expect(loadInitialData(storage({ [APP_STATE_KEY]: JSON.stringify(state), [RECOVERY_JOURNAL_KEY]: JSON.stringify({ committed: false, next: { ...state, history: [{ replacementId: 'NOT-COMMITTED' }] } }) }))).toEqual(state);
   });
 });

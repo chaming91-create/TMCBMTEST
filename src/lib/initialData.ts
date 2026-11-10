@@ -1,3 +1,4 @@
+import { APP_STATE_KEY, RECOVERY_JOURNAL_KEY } from './dataRecovery';
 import * as XLSX from 'xlsx';
 import type { TmMaster, SeverityMaster } from '../types/tm';
 import type { ReplacementHistory } from '../types/replacement';
@@ -20,6 +21,12 @@ function readSaved<T>(storage: SavedData, key: string, fallback: T): T {
 }
 
 export function loadInitialData(storage: SavedData) {
+  try {
+    const journal = JSON.parse(storage.getItem(RECOVERY_JOURNAL_KEY) || 'null');
+    const saved = journal?.committed ? journal.next : JSON.parse(storage.getItem(APP_STATE_KEY) || 'null');
+    if (saved && Array.isArray(saved.tms) && Array.isArray(saved.history) && Array.isArray(saved.severities) && saved.settings) return { tms: saved.tms as TmMaster[], history: saved.history as ReplacementHistory[], severities: saved.severities as SeverityMaster[], settings: saved.settings as RiskSettings };
+  } catch { /* Retain legacy data if a local bundle cannot be read. */ }
+
   const settings = readSaved<RiskSettings>(storage, 'settings', DEFAULT_SETTINGS);
   const tms = readSaved<TmMaster[]>(storage, 'tms', []);
   const history = readSaved<ReplacementHistory[]>(storage, 'history', []);

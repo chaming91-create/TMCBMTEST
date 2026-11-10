@@ -1,0 +1,5 @@
+.data-change-confirmation{width:min(700px,calc(100vw - 32px))}
+.data-change-confirmation .change-list{max-height:240px;overflow:auto;border:1px solid #dbe5ef;border-radius:8px;padding:12px}
+.data-change-confirmation .change-list article+article{border-top:1px solid #dbe5ef;margin-top:10px;padding-top:10px}
+.data-change-confirmation .change-list p{margin:4px 0;line-height:1.5;overflow-wrap:anywhere}
+.data-change-confirmation .change-counts{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0;font-weight:700}
