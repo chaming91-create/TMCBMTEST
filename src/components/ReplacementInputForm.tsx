@@ -80,7 +80,7 @@ function AutoField({ label, value, emptyText = '자동 입력 대기' }: { label
   return <label>{label}<div className={`readonly-field ${value ? '' : 'empty'}`} aria-readonly="true">{value || emptyText}</div></label>;
 }
 
-export default function ReplacementInputForm({ onSaved }: { onSaved: () => void }) {
+export default function ReplacementInputForm({ onHistory, onSerial }: { onHistory: (replacementId: string) => void; onSerial: (serial: string) => void }) {
   const { tms, severities, addReplacement } = useApp();
   const [form, setForm] = useState(empty);
   const [removedMode, setRemovedMode] = useState<SerialMode>('existing');
@@ -90,19 +90,35 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
   const [saving, setSaving] = useState(false);
   const [disposal, setDisposal] = useState(false);
   const [pending, setPending] = useState<ReplacementHistory | null>(null);
+  const [completed, setCompleted] = useState<ReplacementHistory | null>(null);
+  const [detailSerial, setDetailSerial] = useState('');
+  const completionDialog = useRef<HTMLDialogElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const saveLock = useRef(false);
   useEffect(() => {
     if (pending && !dialog.current?.open) dialog.current?.showModal();
     if (!pending && dialog.current?.open) dialog.current.close();
   }, [pending]);
+  useEffect(() => {
+    if (completed && !completionDialog.current?.open) completionDialog.current?.showModal();
+    if (!completed && completionDialog.current?.open) completionDialog.current.close();
+  }, [completed]);
+  const continueInput = () => {
+    setCompleted(null);
+    setForm(empty);
+    setRemovedMode('existing');
+    setInstalledMode('existing');
+    setAutoLocation(false);
+    setDisposal(false);
+    setError('');
+  };
   const cancelConfirmation = () => {
     if (saveLock.current) return;
     setPending(null);
     setError('');
   };
   const confirmSave = async () => {
-    if (!pending || saveLock.current) return;
+    if (!pending || completed || saveLock.current) return;
     saveLock.current = true;
     setSaving(true);
     setError('');
@@ -116,8 +132,8 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
       setSaving(false);
     }
     setPending(null);
-    window.alert('교체정보가 저장되었습니다.');
-    onSaved();
+    setCompleted(pending);
+    setDetailSerial(pending.installedSerialNo || pending.removedSerialNo);
   };
   const set = (key: FormKey, value: string) => setForm(current => ({ ...current, [key]: value }));
   const removedTm = useMemo(() => tms.find(tm => tm.serialNo === form.removedSerialNo), [tms, form.removedSerialNo]);
@@ -163,9 +179,9 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
       <div><span className="step-label">STEP 1 · TM 선택</span><h2>신규 교체정보 등록</h2><p>기존 부품은 체크박스로 선택하고, 신규 부품은 시리얼번호를 직접 입력합니다.</p></div>
       <span>필수 항목 *</span>
     </div>
-    <form inert={Boolean(pending)} onSubmit={event => {
+    <form inert={Boolean(pending || completed)} onSubmit={event => {
       event.preventDefault();
-      if (pending || saveLock.current) return;
+      if (pending || completed || saveLock.current) return;
       if (!form.replacementDate || (!form.removedSerialNo && !form.installedSerialNo)) {
         setError('교체일자와 취거/취부 시리얼번호 중 하나 이상을 입력하세요.');
         return;
@@ -248,6 +264,24 @@ export default function ReplacementInputForm({ onSaved }: { onSaved: () => void 
         {error && <p className="form-error" role="alert">{error}</p>}
         <p role="status" aria-live="polite">{saving ? '저장 중입니다. 잠시 기다려 주세요.' : ''}</p>
         <div className="form-actions"><button type="button" autoFocus disabled={saving} onClick={cancelConfirmation}>수정하기</button><button type="button" className="primary" disabled={saving} onClick={confirmSave}><Save />{saving ? '저장 중...' : '확인 후 저장'}</button></div>
+      </>}
+    </dialog>
+    <dialog ref={completionDialog} className="replacement-confirmation" aria-labelledby="replacement-completed-title" onCancel={event => { event.preventDefault(); continueInput(); }}>
+      {completed && <>
+        <h2 id="replacement-completed-title">교체정보가 저장되었습니다</h2>
+        <p>{completed.replacementDate} · {completed.trainNo}편성 {completed.carNo && `${completed.carNo}호차`}</p>
+        <dl>
+          {completed.removedSerialNo && <div className="removed-serial"><dt>취거 TM 시리얼번호</dt><dd>{completed.removedSerialNo}</dd></div>}
+          {completed.installedSerialNo && <div className="installed-serial"><dt>취부 TM 시리얼번호</dt><dd>{completed.installedSerialNo}</dd></div>}
+        </dl>
+        <fieldset className="completed-tm-choice"><legend>상세이력을 조회할 TM 선택</legend>
+          {([['취거 TM', completed.removedSerialNo], ['취부 TM', completed.installedSerialNo]] as const).filter(([, serial]) => Boolean(serial)).map(([label, serial]) => <label key={label}><input type="radio" name="completed-tm" checked={detailSerial === serial} value={serial} onChange={() => setDetailSerial(serial)} />{label}: {serial}</label>)}
+        </fieldset>
+        <div className="form-actions">
+          <button type="button" autoFocus onClick={continueInput}>계속 입력하기</button>
+          <button type="button" onClick={() => onHistory(completed.replacementId)}>교체현황 바로가기</button>
+          <button type="button" className="primary" disabled={!detailSerial || ![completed.removedSerialNo, completed.installedSerialNo].includes(detailSerial)} onClick={() => { if (detailSerial && [completed.removedSerialNo, completed.installedSerialNo].includes(detailSerial)) onSerial(detailSerial); }}>TM 상세이력 바로가기</button>
+        </div>
       </>}
     </dialog>
   </section>;
